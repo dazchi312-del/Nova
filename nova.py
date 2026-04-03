@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 # Step 3: Copy the exact model name and paste it below
 # ============================================================
 
-LM_STUDIO_BASE_URL = "http://localhost:1234"
+LM_STUDIO_BASE_URL = "http://10.0.0.237:1234"
 API_ENDPOINT = f"{LM_STUDIO_BASE_URL}/v1/chat/completions"
 DEFAULT_MODEL = "llama-3.1-8b-instruct"
 
