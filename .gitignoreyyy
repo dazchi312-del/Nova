@@ -1,0 +1,15 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Virtual env
+.venv/
+
+# Mac
+.DS_Store
+
+# Data (optional later)
+nova_data/
+
+
