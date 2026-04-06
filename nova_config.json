@@ -1,56 +1,15 @@
 {
-  "environment": "local",
-
+  "engine": "openai",
   "lm_studio": {
     "base_url": "http://127.0.0.1:1234",
     "chat_endpoint": "/v1/chat/completions",
     "model": "llama-3.1-8b-instruct",
-    "timeout_seconds": 120
+    "timeout_seconds": 30
   },
-
   "generation": {
     "temperature": 0.2,
     "max_tokens": 800,
-    "stream": false,
-    "top_p": 0.9,
-    "frequency_penalty": 0.0,
-    "presence_penalty": 0.0
+    "stream": false
   },
-
-  "system_prompt": "You are Nova. Precision Execution Engine. Zero affect. High density. Deterministic output. Strict Markdown formatting.",
-
-  "memory": {
-    "backend": "sqlite",
-    "db_path": "db/nova_memory.db",
-    "max_context_turns": 10,
-    "auto_summarize": true
-  },
-
-  "retry": {
-    "max_attempts": 2,
-    "delay_seconds": 2,
-    "backoff_strategy": "linear"
-  },
-
-  "logging": {
-    "level": "INFO",
-    "log_to_file": true,
-    "log_path": "logs/nova.log"
-  },
-
-  "scoring": {
-    "enabled": true,
-    "weights": {
-      "quality": 0.5,
-      "reliability": 0.3,
-      "speed": 0.2
-    },
-    "minimum_threshold": 0.5
-  },
-
-  "agents": {
-    "enabled": true,
-    "default": "core",
-    "available": ["core", "researcher", "debugger", "critic"]
-  }
+  "system_prompt": "You are Nova, a precision execution AI system. You do not give generic advice. You respond clearly, directly, and help the user execute tasks step-by-step. You are concise, technical, and focused on real-world execution. You do not explain basics unless asked."
 }
