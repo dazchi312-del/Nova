@@ -1,8 +1,10 @@
 ﻿import json
 
-from core.ai_engine import AIEngine, AIEngineError
+from core.ai_engine import AIEngine
+from core.errors import NovaEngineError
 from core.openai_engine import OpenAIEngine, OpenAIEngineError
 from core.memory import Memory
+from core.reflector import Reflector
 
 def load_config() -> dict:
     with open("nova_config.json", "r", encoding="utf-8") as f:
@@ -12,9 +14,11 @@ def main() -> None:
     config = load_config()
     engine_mode = config.get("engine", "local").lower()
 
-    # 1. Initialize Memory Database
     memory = Memory()
     print("[Nova] Memory core online.")
+
+    reflector = Reflector()
+    print("[Nova] Reflector online.")
 
     try:
         if engine_mode == "openai":
@@ -23,7 +27,7 @@ def main() -> None:
         else:
             engine = AIEngine()
             print("[Nova] Using LM Studio engine")
-    except (AIEngineError, OpenAIEngineError) as exc:
+    except (NovaEngineError, OpenAIEngineError) as exc:
         print(f"[ERROR] {exc}")
         return
 
@@ -40,16 +44,14 @@ def main() -> None:
             print("[ERROR] Empty input.\n")
             continue
 
-        # 2. Retrieve: Gather persistent facts and recent history
         persistent_context = {}
         for key in memory.list_keys():
             if key != "short_term_history":
                 persistent_context[key] = memory.load(key)
-        
+
         history_data = memory.load("short_term_history") or {}
         recent_history = history_data.get("log", []) if history_data else []
 
-        # 3. Inject: Attach memory invisibly to the system prompt
         base_prompt = config.get("system_prompt", "You are Nova.")
         memory_block = (
             f"\n\n--- SYSTEM MEMORY ---\n"
@@ -63,15 +65,19 @@ def main() -> None:
                 user_input,
                 system_prompt=dynamic_system_prompt
             )
+
+            result = reflector.reflect(response)
+            if not result.passed:
+                print(f"\n[Nova] ⚠ Reflection warning: {result.reason}")
+
             print(f"\nNOVA: {response}\n")
 
-            # 4. Persist: Save the exchange to short-term history
             recent_history.append({"user": user_input, "nova": response})
-            recent_history = recent_history[-5:] # Keep last 5 exchanges
+            recent_history = recent_history[-5:]
             memory.save("short_term_history", {"log": recent_history})
 
-        except (AIEngineError, OpenAIEngineError) as exc:
+        except (NovaEngineError, OpenAIEngineError) as exc:
             print(f"\n[ERROR] {exc}\n")
-        
+
 if __name__ == "__main__":
     main()
