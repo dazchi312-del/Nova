@@ -1,0 +1,22 @@
+﻿# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Logs
+logs/
+
+# Temp builds
+temp/
+
+# Environment
+.env
+*.env
+
+# VS Code / Windsurf
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
