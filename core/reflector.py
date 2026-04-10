@@ -32,8 +32,13 @@ class Reflector:
         "i don't know",
         "i am unable",
         "as an ai",
-        "i apologize",
-        "error",
+        "i'm not able",
+        "i do not have the ability",
+        "an error occurred",
+        "i encountered an error",
+        "something went wrong",
+        "i failed to",
+        "i was unable to",
     ]
 
     MIN_LENGTH = 10

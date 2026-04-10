@@ -1,5 +1,5 @@
-"""
-Nova Executor — Layer 4
+﻿"""
+Nova Executor - Layer 4
 Runs code files and captures output + errors
 Clean, safe, precise
 """
@@ -22,9 +22,9 @@ class ExecutionResult:
 
     def __str__(self):
         if self.success:
-            return f"✅ Success\n{self.output}"
+            return f"[OK] Success\n{self.output}"
         else:
-            return f"❌ Failed (code {self.returncode})\n{self.error}"
+            return f"[FAIL] Failed (code {self.returncode})\n{self.error}"
 
 
 class Executor:
@@ -33,10 +33,20 @@ class Executor:
     Runs Python files safely and returns structured results.
     """
 
+    # Allowed environment variables passed to subprocess
+    _SAFE_ENV_KEYS = {"SYSTEMROOT", "PATH", "TEMP", "TMP", "USERPROFILE"}
+
     def __init__(self, workspace: str = "C:/Users/dazch/nova"):
         self.workspace = Path(workspace)
         self.python = sys.executable
         log("CODE", f"Executor ready: {self.python}")
+
+    def _safe_env(self) -> dict:
+        """Return a minimal environment - strips API keys and Nova internals."""
+        return {
+            k: v for k, v in os.environ.items()
+            if k in self._SAFE_ENV_KEYS
+        }
 
     def run_file(self, filepath: str, timeout: int = 30) -> ExecutionResult:
         """Run a Python file and return the result"""
@@ -59,7 +69,8 @@ class Executor:
                 capture_output=True,
                 text=True,
                 timeout=timeout,
-                cwd=str(self.workspace)
+                cwd=str(self.workspace),
+                env=self._safe_env()
             )
 
             success = result.returncode == 0
@@ -95,10 +106,8 @@ class Executor:
             )
 
     def run_code(self, code: str, filename: str = "nova_temp.py") -> ExecutionResult:
-        """Write code to a temp file and run it"""
+        """Write code to a temp file, run it, then clean up."""
         temp_path = self.workspace / "temp" / filename
-
-        # Ensure temp directory exists
         temp_path.parent.mkdir(parents=True, exist_ok=True)
 
         try:
@@ -115,3 +124,8 @@ class Executor:
                 error=str(e),
                 returncode=-1
             )
+
+        finally:
+            if temp_path.exists():
+                temp_path.unlink()
+                log("CODE", f"Temp file cleaned: {filename}")

@@ -2,7 +2,7 @@
 Nova Planner — Layer 5
 Breaks a plain English goal into ordered build steps
 """
-
+import re
 from dataclasses import dataclass, field
 from typing import List
 from core.logger import session_logger, LogLevel
@@ -36,6 +36,19 @@ class Planner:
     def __init__(self, ai: AIEngine):
         self.ai = ai
         session_logger.log("Planner ready", LogLevel.ARCH)
+    
+    def _is_valid_filename(self, filename: str) -> bool:
+        """Check filename is a real .py file, not LLM garbage"""
+        if not filename:
+            return False
+        if filename.lower().startswith("none"):
+            return False
+        if not filename.endswith(".py"):
+            return False
+        # Only allow safe characters: letters, numbers, underscore, hyphen, dot
+        if not re.match(r'^[\w\-]+\.py$', filename):
+            return False
+        return True
 
     def plan(self, goal: str) -> BuildPlan:
         session_logger.log(f"Planning goal: {goal}", LogLevel.VISION)
@@ -84,7 +97,12 @@ filename: <output_filename.py>"""
             elif line.startswith("description:"):
                 current["description"] = line.split(":", 1)[1].strip()
             elif line.startswith("filename:"):
-                current["filename"] = line.split(":", 1)[1].strip()
+                raw = line.split(":", 1)[1].strip()
+                if self._is_valid_filename(raw):
+                    current["filename"] = raw
+                else:
+                    session_logger.log(f"Invalid filename rejected: {raw}", LogLevel.ARCH)
+
 
         if current:
             plan.steps.append(BuildStep(

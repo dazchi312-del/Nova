@@ -1,22 +1,19 @@
-﻿# Python
+﻿# Python cache
 __pycache__/
 *.pyc
 *.pyo
-*.pyd
 
-# Logs
-logs/
+# Database (local only)
+db/nova.db
 
-# Temp builds
-temp/
+# Diagnostics / one-off scripts
+diagnose*.py
+fix_*.py
+write_*.py
+identity.py
 
-# Environment
-.env
-*.env
+# Obsidian local config
+Nova/.obsidian/
 
-# VS Code / Windsurf
-.vscode/
-
-# OS
-.DS_Store
-Thumbs.db
+# Temp files
+*.tmp

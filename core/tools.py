@@ -120,7 +120,7 @@ def list_files(directory: str = ".") -> list:
     List all files in a directory recursively.
     Nova uses this to understand project structure.
     """
-    session_logger.log(f"Listing files in: {directory}", LogLevel.STRUCTURE)
+    session_logger.log(f"Listing files in: {directory}", LogLevel.STRUCT)
     
     dir_path = Path(directory)
     
@@ -139,10 +139,31 @@ def list_files(directory: str = ".") -> list:
         
         session_logger.log(
             f"Listed {len(files)} files",
-            LogLevel.STRUCTURE,
+            LogLevel.STRUCT,
             {"directory": directory, "count": len(files)}
         )
         return files
     
     except Exception as e:
         raise NovaToolError(f"Error listing directory {directory}: {e}")
+
+
+# -- Aliases for dispatcher compatibility --
+list_directory = list_files
+ToolError = NovaToolError
+
+
+def run_shell(command: str, timeout: int = 30) -> str:
+    """Run a shell command and return combined output."""
+    import subprocess
+    result = subprocess.run(
+        command,
+        shell=True,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+    )
+    out = result.stdout.strip()
+    err = result.stderr.strip()
+    combined = (out + ("\n" + err if err else "")).strip()
+    return combined if combined else "(no output)"

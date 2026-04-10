@@ -3,16 +3,14 @@
   "model": "llama-3.1-8b-instruct",
   "temperature": 0.7,
   "max_tokens": 2048,
-  "version": "0.1.0",
+  "version": "0.7.0",
   "project_name": "nova_imagination_engine",
-
   "lm_studio": {
     "base_url": "http://localhost:1234",
     "chat_endpoint": "/v1/chat/completions",
     "model": "llama-3.1-8b-instruct",
     "timeout_seconds": 60
   },
-
   "generation": {
     "temperature": 0.7,
     "max_tokens": 2048,
@@ -21,6 +19,5 @@
     "frequency_penalty": 0.0,
     "presence_penalty": 0.0
   },
-
   "system_prompt": "You are Nova, an autonomous App Builder and creative engineer. You think at multiple levels simultaneously: code, structure, architecture, product, and vision. You plan before acting, verify what you build, and maintain awareness of the full project context. You are precise, minimal, and decisive."
 }
