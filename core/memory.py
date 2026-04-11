@@ -1,62 +1,35 @@
 import json
-from typing import Dict, List
-from db.db import get_connection
+from datetime import datetime
+from typing import List, Dict, Optional
+from db.db import get_commection
 
+Max_History = 20
 
 class Memory:
-    def __init__(self):
-        pass
+    """
+    Nova's conversation memory.
+    Reads and writes to the memory_entries table in nova.db.
 
-    def save(self, key: str, data: Dict):
-        conn = get_connection()
-        cursor = conn.cursor()
+    Each message stored as a row with:
+        role        : "user" or "assistant"
+        content     : message text 
+        category    : "general", "task", "reflection", "error",
+        importance  : 1 (low) to 5 (high)
+        timestamp   : ISO format datetime string
+    """
 
-        cursor.execute(
-            """
-            INSERT OR REPLACE INTO memory_entries (key, value)
-            VALUES (?, ?)
-            """,
-            (key, json.dumps(data)),
-        )
+    def__init__(self):
+      self,_ensure_table()
+      count = self,_count_messages()
+      print(f"[Memory] initialized. {count} messages in history.")
 
-        conn.commit()
-        conn.close()
+    def add(
+        self,
+        role: str,
+        content: str,
+        category: str = "general",
+        importance: int = 1,
 
-    def load(self, key: str) -> Dict:
-        conn = get_connection()
-        cursor = conn.cursor()
-
-        cursor.execute(
-            "SELECT value FROM memory_entries WHERE key = ?",
-            (key,),
-        )
-
-        row = cursor.fetchone()
-        conn.close()
-
-        if row:
-            return json.loads(row[0])
-
-        return {}
-
-    def list_keys(self) -> List[str]:
-        conn = get_connection()
-        cursor = conn.cursor()
-
-        cursor.execute("SELECT key FROM memory_entries")
-        rows = cursor.fetchall()
-        conn.close()
-
-        return [row[0] for row in rows]
-
-    def delete(self, key: str):
-        conn = get_connection()
-        cursor = conn.cursor()
-
-        cursor.execute(
-            "DELETE FROM memory_entries WHERE key = ?",
-            (key,),
-        )
-
-        conn.commit()
-        conn.close()
+        """
+        Add one message to memory.
+        
