@@ -14,7 +14,7 @@ def test_app_builder_thinking():
     session_logger.log("Starting App Builder foundation test", LogLevel.VISION)
     session_logger.log("Testing Layer 0 stability for autonomous building", LogLevel.PRODUCT)
     session_logger.log("Testing error hierarchy and logging system", LogLevel.ARCH)
-    session_logger.log("Creating test structure", LogLevel.STRUCTURE)
+    session_logger.log("Creating test structure", LogLevel.STRUCT)
     session_logger.log("Executing test code", LogLevel.CODE)
 
     try:
@@ -47,8 +47,6 @@ def test_app_builder_thinking():
     )
 
     print("\n✅ App Builder foundation test complete")
-    print(f"📝 Session log:    {session_logger.session_file}")
-    print(f"📊 Structured log: {session_logger.structured_file}")
 
 
 if __name__ == "__main__":

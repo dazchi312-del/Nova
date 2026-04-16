@@ -1,1 +1,0 @@
-print("Nova Imagination Engine — Layer 4 active")

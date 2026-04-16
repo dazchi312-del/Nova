@@ -1,5 +1,4 @@
-# Nova Session — 04/09/26 — Session 02
-
+# Nova Session — 04/09/26 — Session
 ---
 
 ## Intention

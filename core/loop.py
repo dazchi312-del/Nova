@@ -1,54 +1,53 @@
-from __future__ import annotations
-
+# core/loop.py
+import json
 import requests
-from core.dispatcher import dispatch, TOOL_SCHEMA, DispatchError
-from core.config import load_config
-from core.reflector import Reflector
 
-config = load_config()
-LM_STUDIO_URL = "http://localhost:1234/v1/chat/completions"
-MODEL = config["lm_studio"]["model"]
-MAX_TOOL_ROUNDS = 5
+# ── Config ──────────────────────────────────────────────
+with open("nova_config.json") as f:
+    cfg = json.load(f)
 
-SYSTEM_PROMPT = f"""You are Nova, a local AI agent with access to tools.
-{TOOL_SCHEMA}
-"""
+PRIMARY_URL   = cfg["base_url"]
+PRIMARY_MODEL = cfg["primary_model"]
+REFLECT_URL   = cfg["reflector"]["base_url"]
+REFLECT_MODEL = cfg["reflector"]["model"]
 
-reflector = Reflector()
+# ── One call to Nemotron 70B ─────────────────────────────
+def call_primary(prompt):
+    print("[Primary] Calling Nemotron 70B...")
+    r = requests.post(
+        f"{PRIMARY_URL}/chat/completions",
+        json={
+            "model": PRIMARY_MODEL,
+            "messages": [{"role": "user", "content": prompt}],
+            "temperature": 0.7,
+            "max_tokens": 512
+        }
+    )
+    return r.json()["choices"][0]["message"]["content"]
 
-
-def chat(messages: list[dict], temperature: float = 0.3) -> str:
+# ── One call to Reflector 8B on MacBook ─────────────────
+def call_reflector(original, response):
+    print("[Reflector] Calling llama3.1:8b on MacBook...")
     payload = {
-        "model": MODEL,
-        "messages": messages,
-        "temperature": temperature,
-        "max_tokens": 512,
-        "stream": False,
+        "model": REFLECT_MODEL,
+        "prompt": f"Rate this response for accuracy 0.0-1.0.\nQ: {original}\nA: {response}\nScore only, one decimal:",
+        "stream": False
     }
-    response = requests.post(LM_STUDIO_URL, json=payload, timeout=300)
-    response.raise_for_status()
-    return response.json()["choices"][0]["message"]["content"]
+    r = requests.post(f"{REFLECT_URL}/api/generate", json=payload)
+    return r.json()["response"].strip()
 
+# ── Main Loop ────────────────────────────────────────────
+if __name__ == "__main__":
+    print("Nova Minimal Loop — type 'exit' to quit\n")
+    while True:
+        user_input = input("You: ").strip()
+        if user_input.lower() == "exit":
+            break
 
-def run_loop(user_input: str, history: list[dict] | None = None) -> str:
-    messages = [{"role": "system", "content": SYSTEM_PROMPT}]
-    if history:
-        messages.extend(history)
-    messages.append({"role": "user", "content": user_input})
+        # Step 1 — Primary generates
+        response = call_primary(user_input)
+        print(f"\nNova: {response}\n")
 
-    for round_num in range(MAX_TOOL_ROUNDS):
-        nova_reply = chat(messages)
-        tool_called, result = dispatch(nova_reply)
-
-        if not tool_called:
-            reflection = reflector.reflect(nova_reply)
-            if reflection.passed:
-                return nova_reply
-            else:
-                return f"[REFLECT FAIL] {reflection.reason}\n\n{nova_reply}"
-
-        # Tool was called - feed result back to Nova
-        messages.append({"role": "assistant", "content": nova_reply})
-        messages.append({"role": "user", "content": f"[TOOL RESULT]\n{result}\n[/TOOL RESULT]"})
-
-    return "[LOOP ERROR] Max tool rounds reached without final response."
+        # Step 2 — Reflector scores
+        score = call_reflector(user_input, response)
+        print(f"[Reflector] Score: {score}\n")
