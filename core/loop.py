@@ -10,6 +10,9 @@ from core.identity import NOVA_IDENTITY
 from core.memory import init_db, new_session, close_session, log_turn, get_session_context
 from core.Obsidian_bridge import ObsidianBridge
 
+# [PHASE 10] Import the hardware sensor
+from core.telemetry import HardwareBreaker
+
 with open("nova_config.json") as f:
     cfg = json.load(f)
 
@@ -19,12 +22,16 @@ REFLECT_URL   = cfg["reflector"]["base_url"]
 REFLECT_MODEL = cfg["reflector"]["model"]
 
 THRESHOLD = 0.75
-PRIMARY_TIMEOUT   = 180
+PRIMARY_TIMEOUT   = 300
 REFLECTOR_TIMEOUT = 30
 
 VAULT_PATH = r"C:\Users\dazch\nova\vault"
 
 bridge = ObsidianBridge()
+
+# [PHASE 10] Initialize the breaker. Set to 30C temporarily to force a test trip!
+breaker = HardwareBreaker(temp_limit=80, vram_limit_pct=95.0)
+
 
 # ── Task Helpers ──────────────────────────────────────────────────────────────
 
@@ -85,20 +92,18 @@ def handle_command(cmd, session_id):
 
     if lower == "/help":
         print("\nCommands:")
-        print("  /status             — show system info and vault stats")
-        print("  /debug              — print vault index summary")
-        print("  /save               — confirm session is saved")
-        print("  /clear              — clear terminal")
-        print("  /help               — show this list")
-        print("  /task add <text>    — add a task to projects/tasks.md")
-        print("  /task list          — list all tasks")
-        print("  /task done <number> — mark task complete by number")
-        print("  /project new <name> — create a new project file")
-        print("  /project status     — list all project files")
-        print("  exit                — end session\n")
+        print("  /status            — show system info and vault stats")
+        print("  /debug             — print vault index summary")
+        print("  /save              — confirm session is saved")
+        print("  /clear             — clear terminal")
+        print("  /help              — show this list")
+        print("  /task add <text>   — add a task to projects/tasks.md")
+        print("  /task list         — list all tasks")
+        print("  /task done <number>— mark task complete by number")
+        print("  /project new <name>— create a new project file")
+        print("  /project status    — list all project files")
+        print("  exit               — end session\n")
         return True
-
-    # ── Task Commands ─────────────────────────────────────────────────────────
 
     if lower.startswith("/task add "):
         text = raw[len("/task add "):].strip()
@@ -135,8 +140,6 @@ def handle_command(cmd, session_id):
         except ValueError:
             print("[Task] Usage: /task done <number>\n")
         return True
-
-    # ── Project Commands ──────────────────────────────────────────────────────
 
     if lower.startswith("/project new "):
         name = raw[len("/project new "):].strip().replace(" ", "_").lower()
@@ -192,7 +195,7 @@ def call_primary(messages):
         )
         return r.json()["choices"][0]["message"]["content"]
     except requests.exceptions.Timeout:
-        print("[Primary] Timeout — no response in 180s")
+        print("[Primary] Timeout — no response in 300s")
         return "I'm sorry, the primary model timed out. Please try again."
     except Exception as e:
         print(f"[Primary] Error: {e}")
@@ -235,6 +238,26 @@ def call_reflector(original, response):
         print(f"[Reflector] Error: {e} — defaulting score to 1.0")
         return 1.0
 
+# ── [PHASE 10] Failover Call ──────────────────────────────────────────────────
+
+def call_failover(messages):
+    print("[Failover] 5090 offline/throttled. Rerouting prompt to MacBook (8B)...")
+    payload = {
+        "model": REFLECT_MODEL,
+        "messages": messages,
+        "stream": False
+    }
+    try:
+        r = requests.post(
+            f"{REFLECT_URL}/api/chat",
+            json=payload,
+            timeout=PRIMARY_TIMEOUT
+        )
+        return r.json()["message"]["content"]
+    except Exception as e:
+        print(f"[Failover Error] Mac unreachable: {e}")
+        return "[System Notice] Total cluster failure. Both primary and secondary nodes are unresponsive."    
+
 # ── Message Builder ───────────────────────────────────────────────────────────
 
 def build_messages(session_id, user_input):
@@ -268,17 +291,31 @@ def run_turn(session_id, user_input, dry_run=False):
         return response, score
 
     messages = build_messages(session_id, user_input)
-    response = call_primary(messages)
-    score = call_reflector(user_input, response)
-    print(f"[Reflector] Score: {score}")
 
-    if score < THRESHOLD:
-        print(f"[Reflector] Score {score:.2f} below threshold {THRESHOLD} — regenerating once...")
+    # --- [PHASE 10] HARDWARE CIRCUIT BREAKER ---
+    is_safe, status_msg = breaker.check_pressure()
+    print(f"[System Monitor] {status_msg}")
+
+    if not is_safe:
+        print("\n[CIRCUIT BREAKER TRIPPED] Thermal/VRAM limit exceeded. Rerouting...")
+        
+        # [PHASE 10] Real Failover Execution
+        response = call_failover(messages)
+        score = 1.0  # Bypass scoring during failover
+        
+    else:
+        # Normal Operation
         response = call_primary(messages)
         score = call_reflector(user_input, response)
-        print(f"[Reflector] Retry score: {score:.2f}")
+        print(f"[Reflector] Score: {score}")
+
         if score < THRESHOLD:
-            print(f"[Reflector] Retry still below threshold — accepting anyway to prevent loop")
+            print(f"[Reflector] Score {score:.2f} below threshold {THRESHOLD} — regenerating once...")
+            response = call_primary(messages)
+            score = call_reflector(user_input, response)
+            print(f"[Reflector] Retry score: {score:.2f}")
+            if score < THRESHOLD:
+                print(f"[Reflector] Retry still below threshold — accepting anyway to prevent loop")
 
     log_turn(session_id, "user", user_input)
     log_turn(session_id, "assistant", response, score=score)

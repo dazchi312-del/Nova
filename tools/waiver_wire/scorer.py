@@ -1,282 +1,395 @@
-# scorer.py
-# Nova Fantasy Asset — Scoring Engine
-# Big Dan Baseball v1.0
+"""
+Big Dan Baseball v1.0 — Waiver Wire Scorer
+Layer 1: Raw Outlier Score (z-score based)
+Layer 2: Contextual Modifier (role, matchup, injury)
+Layer 3: Profile + Need Modifier (user risk + category gaps)
+Layer 4: Signal Classifier (SIGNAL/WATCH/NOISE)
+Layer 5: Final Score + Recommendation
+"""
 
 from config import (
+    SENSITIVITY,
     STAT_BASELINES,
-    INVERSE_CATEGORIES,
-    THRESHOLDS,
-    SIGNAL_REQUIREMENTS,
-    NOISE_INDICATORS
+    MODIFIER_RANGES,
+    QUALITY_BASELINES,
+    QUALITY_THRESHOLDS,
+    PLAYER_CATEGORY_MAP,
+    OWNERSHIP_THRESHOLDS,
 )
+
+# ─────────────────────────────────────────
+# HOLDS HUNTER PROFILE
+# ─────────────────────────────────────────
 
 # ─────────────────────────────────────────
 # LAYER 1: RAW OUTLIER SCORE
 # ─────────────────────────────────────────
 
-def raw_outlier_score(recent_stat, season_stat, stat_name):
+def calculate_z_score(value: float, mean: float, std: float) -> float:
+    """Calculate standard z-score."""
+    if std == 0:
+        return 0.0
+    return (value - mean) / std
+
+
+def calculate_raw_score(z_score: float, sensitivity: int = SENSITIVITY) -> float:
     """
-    Measures deviation from baseline.
-    Returns 0-100.
-    Inverse categories (ERA, WHIP, L) are flipped.
+    Convert z-score to 0-100 scale.
+    Baseline (z=0) = 50, each z-unit moves score by sensitivity points.
     """
-
-    if stat_name not in STAT_BASELINES:
-        print(f"  [WARN] Unknown stat: {stat_name}. Returning neutral 50.")
-        return 50.0
-
-    baseline = STAT_BASELINES[stat_name]
-    std_dev   = baseline["std_dev"]
-
-    if std_dev == 0:
-        return 50.0
-
-    delta = recent_stat - season_stat
-
-    if stat_name in INVERSE_CATEGORIES:
-        delta = -delta
-
-    z_score = delta / std_dev
-    score   = 50 + (z_score * 18)
-
-    return round(max(0.0, min(100.0, score)), 1)
+    raw = 50 + (z_score * sensitivity)
+    return max(0, min(100, raw))
 
 
 # ─────────────────────────────────────────
 # LAYER 2: CONTEXTUAL MODIFIER
 # ─────────────────────────────────────────
 
-def contextual_modifier(player_context):
+def calculate_context_modifier(
+    role_secure: bool | None,
+    starts_next_week: int,
+    team_rank: int,
+    opp_rank: int,
+    injury_risk: bool,
+    platoon_risk: bool,
+) -> float:
     """
-    Adjusts raw score based on real-world context.
-
-    player_context keys:
-        role_secure        True/False
-        starts_next_week   int (0-2)
-        team_offense_rank  int (1-30)
-        opponent_rank      int (1-30, 1=hardest)
-        days_since_injury  int or None
-        platoon_risk       True/False
+    Adjust score based on playing time and matchup context.
+    Returns modifier between 0.5 and 1.5.
     """
-
     modifier = 1.0
 
-    if player_context.get("role_secure") == False:
-        modifier *= 0.7
-    elif player_context.get("role_secure") == True:
+    # Role security (handle None as slight penalty)
+    if role_secure is None:
+        modifier *= 0.9
+    elif role_secure:
         modifier *= 1.1
+    else:
+        modifier *= 0.8
 
-    starts = player_context.get("starts_next_week", 1)
-    if starts == 2:
-        modifier *= 1.2
-    elif starts == 0:
-        modifier *= 0.4
-
-    team_rank = player_context.get("team_offense_rank", 15)
-    if team_rank <= 5:
-        modifier *= 1.1
-    elif team_rank >= 25:
-        modifier *= 0.85
-
-    opp_rank = player_context.get("opponent_rank", 15)
-    if opp_rank >= 25:
+    # Starts next week (SP specific)
+    if starts_next_week >= 2:
         modifier *= 1.15
-    elif opp_rank <= 5:
+    elif starts_next_week == 1:
+        modifier *= 1.0
+    else:
         modifier *= 0.85
 
-    days_back = player_context.get("days_since_injury", None)
-    if days_back is not None:
-        if days_back < 7:
-            modifier *= 0.75
-        elif days_back < 14:
-            modifier *= 0.90
+    # Team strength (1 = best, 30 = worst)
+    if team_rank <= 10:
+        modifier *= 1.1
+    elif team_rank >= 20:
+        modifier *= 0.9
 
-    if player_context.get("platoon_risk") == True:
+    # Opponent weakness (higher rank = weaker opponent = good)
+    if opp_rank >= 20:
+        modifier *= 1.1
+    elif opp_rank <= 10:
+        modifier *= 0.9
+
+    # Risk factors
+    if injury_risk:
         modifier *= 0.85
+    if platoon_risk:
+        modifier *= 0.9
 
-    return round(max(0.5, min(1.5, modifier)), 3)
+    # Clamp to range
+    return max(
+        MODIFIER_RANGES["context"]["min"],
+        min(MODIFIER_RANGES["context"]["max"], modifier),
+    )
 
 
 # ─────────────────────────────────────────
-# LAYER 3: RISK PROFILE MULTIPLIER
+# LAYER 3: PROFILE + NEED MODIFIER
 # ─────────────────────────────────────────
 
-def risk_profile_multiplier(profile, need_level, week_position):
+def calculate_need_modifier(
+    player_type: str,
+    category_need: list[str],
+) -> float:
     """
-    Adjusts for personal risk tolerance and standings context.
-
-    profile:        aggressive | neutral | conservative
-    need_level:     desperate | moderate | comfortable
-    week_position:  ahead | close | behind
+    Boost score if player contributes to categories you're chasing.
     """
+    if not category_need:
+        return 1.0
 
-    multiplier = 1.0
+    player_categories = PLAYER_CATEGORY_MAP.get(player_type, [])
+    overlap = set(player_categories) & set(category_need)
 
-    profile_map = {
-        "aggressive":   1.2,
-        "neutral":      1.0,
+    if len(overlap) >= 3:
+        return 1.5  # Strong multi-category fit
+    elif len(overlap) == 2:
+        return 1.3  # Good fit
+    elif len(overlap) == 1:
+        return 1.15  # Marginal fit
+    else:
+        return 0.85  # Doesn't address your gaps
+
+
+def calculate_profile_modifier(
+    profile: str,
+    need_modifier: float,
+) -> float:
+    """
+    Combine user risk profile with category need.
+    """
+    profile_base = {
+        "aggressive": 1.2,
+        "neutral": 1.0,
         "conservative": 0.85,
     }
-    multiplier *= profile_map.get(profile, 1.0)
 
-    need_map = {
-        "desperate":   1.2,
-        "moderate":    1.0,
-        "comfortable": 0.9,
-    }
-    multiplier *= need_map.get(need_level, 1.0)
+    base = profile_base.get(profile, 1.0)
+    combined = base * need_modifier
 
-    position_map = {
-        "behind": 1.15,
-        "close":  1.0,
-        "ahead":  0.9,
-    }
-    multiplier *= position_map.get(week_position, 1.0)
-
-    return round(max(0.7, min(1.4, multiplier)), 3)
+    # Clamp to range
+    return max(
+        MODIFIER_RANGES["profile"]["min"],
+        min(MODIFIER_RANGES["profile"]["max"], combined),
+    )
 
 
 # ─────────────────────────────────────────
 # LAYER 4: SIGNAL CLASSIFIER
 # ─────────────────────────────────────────
 
-def classify_signal(spike_duration_days, confirming_stats, outlier_score):
+def classify_signal(
+    hot_streak_days: int,
+    confirming_stats: int,
+    quality_score: float,
+) -> str:
     """
-    Is this a SIGNAL, WATCH, or NOISE?
-    This is the calm detector.
+    Classify player data quality.
+    
+    Args:
+        hot_streak_days: Length of current performance spike
+        confirming_stats: Number of underlying metrics supporting breakout
+        quality_score: xwOBA or equivalent quality metric
+    
+    Returns:
+        SIGNAL, WATCH, or NOISE
     """
+    # Quality threshold check
+    if quality_score >= QUALITY_THRESHOLDS["auto_add"]:
+        quality_tier = "elite"
+    elif quality_score >= QUALITY_THRESHOLDS["watch"]:
+        quality_tier = "good"
+    else:
+        quality_tier = "poor"
 
-    if (spike_duration_days <= NOISE_INDICATORS["max_duration_days"]
-            and confirming_stats <= NOISE_INDICATORS["max_confirming_stats"]):
+    # Classification logic
+    if quality_tier == "elite" and confirming_stats >= 2:
+        return "SIGNAL"
+    elif quality_tier == "elite" and confirming_stats < 2:
+        return "WATCH"  # Great underlying, need more confirmation
+    elif quality_tier == "good" and hot_streak_days >= 10 and confirming_stats >= 2:
+        return "SIGNAL"
+    elif quality_tier == "good":
+        return "WATCH"
+    else:
         return "NOISE"
 
-    if (spike_duration_days >= SIGNAL_REQUIREMENTS["min_duration_days"]
-            and confirming_stats >= SIGNAL_REQUIREMENTS["min_confirming_stats"]
-            and outlier_score >= SIGNAL_REQUIREMENTS["min_magnitude"]):
-        return "SIGNAL"
-
-    return "WATCH"
-
 
 # ─────────────────────────────────────────
-# LAYER 5: FINAL SCORE
+# LAYER 5: FINAL SCORE + RECOMMENDATION
 # ─────────────────────────────────────────
+
+def calculate_quality_score(
+    x_woba: float | None,
+    hard_hit_rate: float | None,
+    exit_velo: float | None,
+    k_per_9: float | None = None,
+    whip: float | None = None,
+    player_type: str = "balanced_hitter",
+) -> float:
+    """
+    Calculate composite quality score from Statcast metrics.
+    Returns 0.0 to 0.500 scale (like xwOBA).
+    """
+    # Pitcher logic
+    if player_type in ["ace", "closer", "holds_hunter", "streamer"]:
+        scores = []
+        if k_per_9 is not None:
+            scores.append(min(0.5, k_per_9 / 25))
+        if whip is not None:
+            scores.append(max(0.2, 0.5 - (whip - 0.8) * 0.4))
+        return sum(scores) / len(scores) if scores else 0.32
+
+    # Hitter logic
+    scores = []
+    weights = []
+
+    if x_woba is not None:
+        scores.append(x_woba)
+        weights.append(3)
+
+    if hard_hit_rate is not None:
+        scores.append(hard_hit_rate * 0.8 + 0.05)
+        weights.append(2)
+
+    if exit_velo is not None:
+        scores.append((exit_velo - 80) / 35)
+        weights.append(1)
+
+    if not scores:
+        return 0.32
+
+    return sum(s * w for s, w in zip(scores, weights)) / sum(weights)
+
+
+    # Hitter logic
+    scores = []
+    weights = []
+
+    if x_woba is not None:
+        scores.append(x_woba)
+        weights.append(3)  # Primary metric
+
+    if hard_hit_rate is not None:
+        # Convert HH% to xwOBA-like scale
+        scores.append(hard_hit_rate * 0.8 + 0.05)
+        weights.append(2)
+
+    if exit_velo is not None:
+        # Convert EV to xwOBA-like scale (88 EV = 0.32, 94 EV = 0.40)
+        scores.append((exit_velo - 80) / 35)
+        weights.append(1)
+
+    if not scores:
+        return 0.32  # League average default
+
+    return sum(s * w for s, w in zip(scores, weights)) / sum(weights)
+
 
 def final_score(
-    recent_stat,
-    season_stat,
-    stat_name,
-    player_context,
-    profile="neutral",
-    need_level="moderate",
-    week_position="close"
-):
+    z_score: float,
+    role_secure: bool | None,
+    starts_next_week: int,
+    team_rank: int,
+    opp_rank: int,
+    injury_risk: bool,
+    platoon_risk: bool,
+    profile: str,
+    player_type: str,
+    category_need: list[str],
+    hot_streak_days: int,
+    confirming_stats: int,
+    x_woba: float | None = None,
+    hard_hit_rate: float | None = None,
+    exit_velo: float | None = None,
+    k_per_9: float | None = None,
+    whip: float | None = None,
+    ownership_pct: float = 0.0,
+) -> dict:
     """
-    Master scoring function.
-    Combines all layers. Returns full breakdown dict.
+    Master scoring function combining all layers.
+    
+    Returns:
+        {
+            "score": 0-100,
+            "recommendation": "ADD" | "WATCH" | "IGNORE",
+            "signal": "SIGNAL" | "WATCH" | "NOISE",
+            "category_fit": ["HR", "RBI", ...],
+            "flags": ["quality_elite", "role_uncertain", ...]
+        }
     """
+    flags = []
 
-    raw         = raw_outlier_score(recent_stat, season_stat, stat_name)
-    context_mod = contextual_modifier(player_context)
-    risk_mod    = risk_profile_multiplier(profile, need_level, week_position)
+    # Layer 1: Raw score
+    raw = calculate_raw_score(z_score)
 
-    combined = raw * context_mod * risk_mod
-    combined = round(max(0.0, min(100.0, combined)), 1)
+    # Layer 2: Context modifier
+    context_mod = calculate_context_modifier(
+        role_secure=role_secure,
+        starts_next_week=starts_next_week,
+        team_rank=team_rank,
+        opp_rank=opp_rank,
+        injury_risk=injury_risk,
+        platoon_risk=platoon_risk,
+    )
 
-    if combined >= THRESHOLDS["SIGNAL"]:
+    if role_secure is None:
+        flags.append("role_uncertain")
+    if injury_risk:
+        flags.append("injury_risk")
+    if platoon_risk:
+        flags.append("platoon_risk")
+
+    # Layer 3: Profile + Need modifier
+    need_mod = calculate_need_modifier(player_type, category_need)
+    profile_mod = calculate_profile_modifier(profile, need_mod)
+
+    # Category fit for output
+    player_categories = PLAYER_CATEGORY_MAP.get(player_type, [])
+    category_fit = list(set(player_categories) & set(category_need))
+
+    # Layer 4: Quality + Signal classification
+    quality = calculate_quality_score(
+        x_woba=x_woba,
+        hard_hit_rate=hard_hit_rate,
+        exit_velo=exit_velo,
+        k_per_9=k_per_9,
+        whip=whip,
+        player_type=player_type,
+    )
+
+    signal = classify_signal(
+        hot_streak_days=hot_streak_days,
+        confirming_stats=confirming_stats,
+        quality_score=quality,
+    )
+
+    if quality >= QUALITY_THRESHOLDS["auto_add"]:
+        flags.append("quality_elite")
+    elif quality >= QUALITY_THRESHOLDS["watch"]:
+        flags.append("quality_good")
+
+    # Ownership filter (type-specific thresholds)
+    if player_type == "holds_hunter":
+        threshold = OWNERSHIP_THRESHOLDS["holds_hunter"]
+    else:
+        threshold = OWNERSHIP_THRESHOLDS["default"]
+
+    if ownership_pct > threshold["max_ownership"]:
+        flags.append("ownership_high")
+        profile_mod *= threshold["penalty"]
+
+
+    # Layer 5: Combine
+    final = raw * context_mod * profile_mod
+
+    # Quality bonus (up to +15 for elite quality)
+    if quality >= QUALITY_THRESHOLDS["auto_add"]:
+        final += 15
+    elif quality >= QUALITY_THRESHOLDS["watch"]:
+        final += 7
+
+    # Signal bonus
+    if signal == "SIGNAL":
+        final += 10
+
+    # Clamp
+    final = max(0, min(100, final))
+
+    # Recommendation
+    if final >= 75 and signal in ["SIGNAL", "WATCH"]:
         recommendation = "ADD"
-    elif combined >= THRESHOLDS["WATCH"]:
+    elif final >= 50 or signal == "WATCH":
         recommendation = "WATCH"
     else:
         recommendation = "IGNORE"
 
     return {
-        "raw_score":        raw,
-        "context_modifier": context_mod,
-        "risk_modifier":    risk_mod,
-        "final_score":      combined,
-        "recommendation":   recommendation,
+        "score": round(final, 1),
+        "recommendation": recommendation,
+        "signal": signal,
+        "category_fit": category_fit,
+        "flags": flags,
+        "breakdown": {
+            "raw": round(raw, 1),
+            "context_mod": round(context_mod, 2),
+            "profile_mod": round(profile_mod, 2),
+            "quality": round(quality, 3),
+        },
     }
-
-
-# ─────────────────────────────────────────
-# TEST — Run this file directly
-# ─────────────────────────────────────────
-
-if __name__ == "__main__":
-
-    print("\n" + "="*50)
-    print("NOVA WAIVER WIRE SCORER — TEST RUN")
-    print("Big Dan Baseball | League 46348")
-    print("="*50)
-
-    test_players = [
-        {
-            "name": "Pitcher A — K Spike, 2 Starts",
-            "recent_stat": 11.2,
-            "season_stat":  8.1,
-            "stat_name":   "K/9",
-            "context": {
-                "role_secure":       True,
-                "starts_next_week":  2,
-                "team_offense_rank": 12,
-                "opponent_rank":     22,
-                "days_since_injury": None,
-                "platoon_risk":      False,
-            },
-        },
-        {
-            "name": "Reliever B — HLD Spike, Role Unclear",
-            "recent_stat": 2.5,
-            "season_stat": 0.7,
-            "stat_name":  "HLD",
-            "context": {
-                "role_secure":       False,
-                "starts_next_week":  0,
-                "team_offense_rank": 18,
-                "opponent_rank":     15,
-                "days_since_injury": None,
-                "platoon_risk":      False,
-            },
-        },
-        {
-            "name": "Hitter C — 2B Spike, Just Off IL",
-            "recent_stat": 2.1,
-            "season_stat": 0.8,
-            "stat_name":  "2B",
-            "context": {
-                "role_secure":       True,
-                "starts_next_week":  1,
-                "team_offense_rank": 7,
-                "opponent_rank":     25,
-                "days_since_injury": 5,
-                "platoon_risk":      False,
-            },
-        },
-    ]
-
-    for player in test_players:
-        print(f"\nPlayer: {player['name']}")
-        print("-" * 40)
-
-        result = final_score(
-            recent_stat    = player["recent_stat"],
-            season_stat    = player["season_stat"],
-            stat_name      = player["stat_name"],
-            player_context = player["context"],
-            profile        = "neutral",
-            need_level     = "desperate",
-            week_position  = "close",
-        )
-
-        print(f"  Raw Score:         {result['raw_score']}")
-        print(f"  Context Modifier:  {result['context_modifier']}")
-        print(f"  Risk Modifier:     {result['risk_modifier']}")
-        print(f"  Final Score:       {result['final_score']}")
-        print(f"  Recommendation:    >>> {result['recommendation']} <<<")
-
-    print("\n" + "="*50)
-    print("scorer.py operational.")
-    print("="*50 + "\n")
-
-score_player = final_score
