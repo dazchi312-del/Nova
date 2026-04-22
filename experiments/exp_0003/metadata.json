@@ -1,0 +1,16 @@
+{
+  "experiment_id": "exp_0003",
+  "final_score": 0.85,
+  "iterations": 3,
+  "timestamp": "2026-04-22T04:24:42.495353",
+  "thresholds": {
+    "target": 0.85,
+    "auto_accept": 0.95,
+    "auto_reject": 0.5
+  },
+  "score_progression": [
+    0.0,
+    0.0,
+    0.85
+  ]
+}

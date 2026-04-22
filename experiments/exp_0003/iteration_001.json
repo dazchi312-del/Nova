@@ -1,0 +1,16 @@
+{
+  "iteration": 1,
+  "hypothesis": "Map prime numbers to musical frequencies and create an audio-visual representation showing their distribution pattern",
+  "code": "import numpy as np\nimport matplotlib.pyplot as plt\nimport math\nimport random\nimport collections\n\n# Function to check if a number is prime\ndef is_prime(n):\n    if n < 2:\n        return False\n    for i in range(2, int(math.sqrt(n)) + 1):\n        if n % i == 0:\n            return False\n    return True\n\n# Generate prime numbers up to a limit\nlimit = 1000\nprimes = [i for i in range(2, limit) if is_prime(i)]\n\n# Map prime numbers to musical frequencies (simple linear mapping for demonstration)\nfrequencies = [440 * (prime / min(primes)) for prime in primes]\n\n# Audio-Visual Representation: Plot distribution pattern of primes and their mapped frequencies\nplt.figure(figsize=(12, 6))\n\nplt.subplot(1, 2, 1)\nplt.scatter(range(len(primes)), primes, s=2, c='blue', alpha=0.5)\nplt.title('Prime Number Distribution')\nplt.xlabel('Index')\nplt.ylabel('Prime Number Value')\n\nplt.subplot(1, 2, 2)\nplt.scatter(range(len(frequencies)), frequencies, s=2, c='red', alpha=0.5)\nplt.title('Mapped Musical Frequencies')\nplt.xlabel('Index (Matching Prime Index)')\nplt.ylabel('Frequency (Hz)')\n\nplt.tight_layout()\nplt.savefig('prime_frequencies_output.png')\nplt.close()\n\n# Print statements for a glimpse into the data\nprint(\"First 10 Primes:\", primes[:10])\nprint(\"Mapped Frequencies for First 10 Primes:\", frequencies[:10])\nprint(\"Total Primes Found Under\", limit, \":\", len(primes))",
+  "exec_result": {
+    "status": "success",
+    "output": "[SANDBOX] Saved: C:\\Users\\dazch\\nova\\labs\\sandbox\\prime_frequencies_output.png\nFirst 10 Primes: [2, 3, 5, 7, 11, 13, 17, 19, 23, 29]\nMapped Frequencies for First 10 Primes: [440.0, 660.0, 1100.0, 1540.0, 2420.0, 2860.0, 3740.0, 4180.0, 5060.0, 6380.0]\nTotal Primes Found Under 1000 : 168\n",
+    "error": null,
+    "artifacts": [
+      "fontlist-v390.json",
+      "prime_frequencies_output.png"
+    ]
+  },
+  "score": 0.0,
+  "timestamp": "2026-04-22T04:11:55.397522"
+}

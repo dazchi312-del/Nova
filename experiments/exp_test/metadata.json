@@ -1,0 +1,14 @@
+{
+  "experiment_id": "exp_test",
+  "final_score": 0.85,
+  "iterations": 1,
+  "timestamp": "2026-04-22T04:41:30.532367",
+  "thresholds": {
+    "target": 0.85,
+    "auto_accept": 0.95,
+    "auto_reject": 0.5
+  },
+  "score_progression": [
+    0.85
+  ]
+}

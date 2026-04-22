@@ -1,0 +1,16 @@
+{
+  "iteration": 1,
+  "hypothesis": "Create a simple bar chart",
+  "code": "import matplotlib.pyplot as plt\nimport numpy as np\n\n# Hypothesis: Create a simple bar chart with values [1,4,2,5,3]\nvalues = np.array([1, 4, 2, 5, 3])\nlabels = ['A', 'B', 'C', 'D', 'E']  # assuming labels for each value\n\n# Print input values for verification\nprint(\"Input Values:\", values)\nprint(\"Labels:\", labels)\n\n# Create the bar chart\nplt.bar(labels, values)\nplt.xlabel('Category')\nplt.ylabel('Value')\nplt.title('Simple Bar Chart')\nplt.xticks(labels)  # ensure labels match up with ticks\n\n# Display the plot briefly before saving ( Requirement: visible output )\nplt.draw()\nplt.pause(2)  # pause for 2 seconds to see the plot\n\n# Save the chart as per goal\nplt.savefig('test_chart.png')\n\n# Close the plot after saving\nplt.close()\n\nprint(\"Chart Saved as 'test_chart.png'\")",
+  "exec_result": {
+    "status": "success",
+    "output": "Input Values: [1 4 2 5 3]\nLabels: ['A', 'B', 'C', 'D', 'E']\n[SANDBOX] Saved: C:\\Users\\dazch\\nova\\labs\\sandbox\\test_chart.png\nChart Saved as 'test_chart.png'\n",
+    "error": "C:\\Users\\dazch\\nova\\labs\\sandbox\\tmp5q3263ju.py:49: UserWarning: FigureCanvasAgg is non-interactive, and thus cannot be shown\n  plt.pause(2)  # pause for 2 seconds to see the plot\n",
+    "artifacts": [
+      "fontlist-v390.json",
+      "test_chart.png"
+    ]
+  },
+  "score": 0.85,
+  "timestamp": "2026-04-22T04:41:30.529293"
+}

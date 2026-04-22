@@ -1,0 +1,34 @@
+# NOE Configuration
+# Nova Output Engine Settings
+
+# Scoring thresholds
+thresholds:
+  auto_accept: 0.95    # Score above this = accept without review
+  minimum: 0.85        # Target quality floor
+  auto_reject: 0.50    # Score below this = reject immediately
+
+# Scoring weights (must sum to 1.0)
+weights:
+  quality: 0.20
+  clarity: 0.25
+  structure: 0.20
+  hallucination_risk: 0.20
+  identity_alignment: 0.15
+
+# Refinement settings
+refinement:
+  max_attempts: 3
+  temperature_boost: 0.05    # Add to temp each retry
+  base_temperature: 0.7
+
+# Engine settings
+engine:
+  timeout_seconds: 120
+  reflector_model: "llama3.1:8b"
+  primary_model: "nemotron:70b"
+  reflector_url: "http://10.0.0.167:11434"
+
+
+# Database
+database:
+  path: "db/quality_vault.db"
