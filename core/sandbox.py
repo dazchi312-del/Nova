@@ -1,26 +1,20 @@
-﻿# sandbox.py v1.0.0
+﻿# sandbox.py v2.0.0
 # Location: nova/core/sandbox.py
-# Purpose: Hardened execution environment for LLM-generated code
+# Purpose: Docker + gVisor isolated execution for LLM-generated code
 
 import subprocess
 import tempfile
 import os
-import sys
 from pathlib import Path
+import shutil
 
 # === CONFIGURATION ===
 SANDBOX_DIR = Path(__file__).parent.parent / "labs" / "sandbox"
 EXECUTION_TIMEOUT = 30  # seconds
+DOCKER_IMAGE = "python:3.11-slim"
+DOCKER_RUNTIME = "runsc"  # gVisor
 
-# Modules the generated code is allowed to import
-ALLOWED_MODULES = {
-    'math', 'random', 'collections', 'itertools', 'functools',
-    'numpy', 'matplotlib', 'matplotlib.pyplot',
-    'json', 'datetime', 'time', 're', 'string',
-    'statistics', 'decimal', 'fractions'
-}
-
-# Modules that are explicitly blocked
+# Modules that are explicitly blocked (pre-flight check)
 BLOCKED_MODULES = {
     'os', 'sys', 'subprocess', 'shutil', 'pathlib',
     'socket', 'requests', 'urllib', 'http',
@@ -30,13 +24,11 @@ BLOCKED_MODULES = {
     'code', 'codeop', 'compile'
 }
 
-# Blocked built-in functions
 BLOCKED_BUILTINS = {
     'eval', 'exec', 'compile', '__import__',
     'open', 'input', 'breakpoint',
     'globals', 'locals', 'vars',
-    'getattr', 'setattr', 'delattr',
-    'memoryview', 'credits', 'license'
+    'getattr', 'setattr', 'delattr'
 }
 
 
@@ -48,11 +40,9 @@ def ensure_sandbox_dir():
 
 def validate_code_safety(code: str) -> tuple[bool, str]:
     """
-    Static analysis to catch dangerous patterns before execution.
-    Returns (is_safe, reason)
+    Static analysis before Docker execution.
+    AST Shield runs separately; this catches obvious patterns.
     """
-    
-    # Check for blocked module imports
     for module in BLOCKED_MODULES:
         patterns = [
             f'import {module}',
@@ -62,102 +52,38 @@ def validate_code_safety(code: str) -> tuple[bool, str]:
         ]
         for pattern in patterns:
             if pattern in code:
-                return False, f"Blocked import detected: {module}"
-    
-    # Check for blocked builtins
+                return False, f"Blocked import: {module}"
+
     for builtin in BLOCKED_BUILTINS:
-        # Look for function calls
         if f'{builtin}(' in code:
-            return False, f"Blocked builtin detected: {builtin}()"
-    
-    # Check for file system access patterns
-    dangerous_patterns = [
-        ('os.remove', 'File deletion'),
-        ('os.unlink', 'File deletion'),
-        ('os.rmdir', 'Directory deletion'),
-        ('shutil.rmtree', 'Recursive deletion'),
-        ('os.system', 'Shell command execution'),
-        ('subprocess', 'Process spawning'),
-        ('.write(', 'File writing'),  # Catches open().write()
-        ('Path(', 'Path manipulation'),
-    ]
-    
-    for pattern, reason in dangerous_patterns:
-        if pattern in code:
-            # Special case: allow matplotlib savefig
-            if pattern == '.write(' and 'savefig' in code:
-                continue
-            return False, f"Dangerous pattern: {reason} ({pattern})"
-    
-    # Check for network access
-    network_patterns = ['socket', 'urlopen', 'requests.', 'http.client']
-    for pattern in network_patterns:
-        if pattern in code:
-            return False, f"Network access not allowed: {pattern}"
-    
-    return True, "Code passed safety checks"
+            return False, f"Blocked builtin: {builtin}()"
+
+    return True, "Passed pre-flight checks"
 
 
-def build_sandboxed_code(code: str) -> str:
+def execute_sandboxed(code: str, timeout: int = None) -> dict:
     """
-    Wrap user code with safety restrictions and output capture.
-    """
+    Execute code in Docker container with gVisor isolation.
     
-    sandbox_dir = ensure_sandbox_dir()
+    Args:
+        code: Python code to execute
+        timeout: Optional timeout override (default: EXECUTION_TIMEOUT)
     
-    wrapper = f'''
-# === SANDBOX WRAPPER ===
-import sys
-import io
-import os
-
-# Force UTF-8 output
-sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
-sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
-
-# Lock working directory to sandbox
-os.chdir(r"{sandbox_dir}")
-
-# Restrict what matplotlib can do
-import matplotlib
-matplotlib.use('Agg')  # No GUI, file output only
-import matplotlib.pyplot as plt
-
-# Patch savefig to force sandbox directory
-_original_savefig = plt.savefig
-def _safe_savefig(fname, *args, **kwargs):
-    from pathlib import Path
-    safe_path = Path(r"{sandbox_dir}") / Path(fname).name
-    _original_savefig(str(safe_path), *args, **kwargs)
-    print(f"[SANDBOX] Saved: {{safe_path}}")
-plt.savefig = _safe_savefig
-
-# === USER CODE BEGINS ===
-{code}
-# === USER CODE ENDS ===
-
-# Auto-close any open plots
-plt.close('all')
-'''
-    return wrapper
-
-
-def execute_sandboxed(code: str) -> dict:
+    Returns:
+        dict with status, output, error, artifacts
     """
-    Execute code in isolated environment with full safety checks.
-    Returns dict with status, output, error, artifacts.
-    """
-    
-    # Step 1: Static safety analysis
-    is_safe, safety_msg = validate_code_safety(code)
+    timeout = timeout or EXECUTION_TIMEOUT
+
+    # Step 1: Pre-flight safety check
+    is_safe, msg = validate_code_safety(code)
     if not is_safe:
         return {
             "status": "blocked",
             "output": None,
-            "error": f"Safety check failed: {safety_msg}",
+            "error": f"Safety check failed: {msg}",
             "artifacts": []
         }
-    
+
     # Step 2: Syntax validation
     try:
         compile(code, '<sandbox>', 'exec')
@@ -168,65 +94,86 @@ def execute_sandboxed(code: str) -> dict:
             "error": f"Line {e.lineno}: {e.msg}",
             "artifacts": []
         }
-    
-    # Step 3: Prepare sandbox environment
+
+    # Step 3: Prepare sandbox directory
     sandbox_dir = ensure_sandbox_dir()
     
     # Clear old artifacts
     for f in sandbox_dir.glob('*'):
         if f.is_file():
             f.unlink()
+
+    # Step 4: Write code to temp file
+    code_file = sandbox_dir / "user_code.py"
     
-    # Step 4: Wrap code with safety measures
-    wrapped_code = build_sandboxed_code(code)
-    
-    # Step 5: Write to temp file
-    with tempfile.NamedTemporaryFile(
-        mode='w', 
-        suffix='.py', 
-        delete=False, 
-        encoding='utf-8',
-        dir=sandbox_dir
-    ) as f:
-        f.write(wrapped_code)
-        temp_path = f.name
-    
-    # Step 6: Execute in subprocess
+    wrapped_code = f'''
+import sys
+import io
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
+
+# User code
+{code}
+'''
+    code_file.write_text(wrapped_code, encoding='utf-8')
+
+    # Step 5: Build Docker command
+    docker_cmd = [
+        "docker", "run",
+        "--rm",
+        f"--runtime={DOCKER_RUNTIME}",
+        "--network=none",
+        "--memory=512m",
+        "--cpus=1",
+        "--read-only",
+        "--tmpfs", "/tmp:size=64m",
+        "-v", f"{sandbox_dir.resolve()}:/sandbox:rw",
+        "-w", "/sandbox",
+        DOCKER_IMAGE,
+        "python", "/sandbox/user_code.py"
+    ]
+
+    # Step 6: Execute in Docker
     try:
         result = subprocess.run(
-            [sys.executable, temp_path],
+            docker_cmd,
             capture_output=True,
             text=True,
-            timeout=EXECUTION_TIMEOUT,
+            timeout=timeout,
             encoding='utf-8',
-            errors='replace',
-            cwd=str(sandbox_dir),
-            env={
-                **os.environ,
-                'PYTHONIOENCODING': 'utf-8',
-                'MPLCONFIGDIR': str(sandbox_dir)  # Isolate matplotlib config
-            }
+            errors='replace'
         )
-        
+
         # Collect artifacts
-        artifacts = [f.name for f in sandbox_dir.glob('*') if f.is_file() and not f.suffix == '.py']
-        
+        artifacts = [
+            f.name for f in sandbox_dir.glob('*') 
+            if f.is_file() and f.name != "user_code.py"
+        ]
+
         return {
             "status": "success" if result.returncode == 0 else "error",
-            "output": result.stdout[:3000],
+            "output": result.stdout[:3000] if result.stdout else None,
             "error": result.stderr[:500] if result.stderr else None,
             "return_code": result.returncode,
             "artifacts": artifacts
         }
-    
+
     except subprocess.TimeoutExpired:
         return {
             "status": "timeout",
             "output": None,
-            "error": f"Execution exceeded {EXECUTION_TIMEOUT}s limit",
+            "error": f"Execution exceeded {timeout}s limit",
             "artifacts": []
         }
-    
+
+    except FileNotFoundError:
+        return {
+            "status": "docker_missing",
+            "output": None,
+            "error": "Docker not available. Start dockerd in WSL.",
+            "artifacts": []
+        }
+
     except Exception as e:
         return {
             "status": "exception",
@@ -234,11 +181,11 @@ def execute_sandboxed(code: str) -> dict:
             "error": str(e),
             "artifacts": []
         }
-    
+
     finally:
-        # Clean up temp file
+        # Clean up code file
         try:
-            os.unlink(temp_path)
+            code_file.unlink()
         except:
             pass
 
@@ -250,42 +197,38 @@ def get_artifact_path(filename: str) -> Path:
 
 # === TEST ===
 if __name__ == "__main__":
+    print("=== Sandbox v2.0.0 (Docker + gVisor) ===\n")
+    
     # Test 1: Safe code
     safe_code = '''
-import numpy as np
-import matplotlib.pyplot as plt
-
-x = np.linspace(0, 10, 100)
-y = np.sin(x)
-plt.plot(x, y)
-plt.savefig('test_plot.png')
-print("Generated sine wave plot")
+print("Hello from gVisor sandbox!")
+import math
+print(f"Pi = {math.pi}")
 '''
-    
-    print("=== Test 1: Safe code ===")
+    print("Test 1: Safe code")
     result = execute_sandboxed(safe_code)
     print(f"Status: {result['status']}")
     print(f"Output: {result['output']}")
-    print(f"Artifacts: {result['artifacts']}")
-    
-    # Test 2: Dangerous code
+    print()
+
+    # Test 2: Blocked import
     dangerous_code = '''
 import os
-os.remove('important_file.txt')
+os.system("whoami")
 '''
-    
-    print("\n=== Test 2: Dangerous code ===")
+    print("Test 2: Blocked import")
     result = execute_sandboxed(dangerous_code)
     print(f"Status: {result['status']}")
     print(f"Error: {result['error']}")
-    
-    # Test 3: Network attempt
-    network_code = '''
-import requests
-requests.get('http://evil.com')
+    print()
+
+    # Test 3: Timeout test
+    print("Test 3: Timeout (5s limit)")
+    slow_code = '''
+import time
+time.sleep(10)
 '''
-    
-    print("\n=== Test 3: Network code ===")
-    result = execute_sandboxed(network_code)
+    result = execute_sandboxed(slow_code, timeout=5)
     print(f"Status: {result['status']}")
     print(f"Error: {result['error']}")
+
