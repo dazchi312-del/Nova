@@ -83,6 +83,7 @@ class SandboxResult:
     truncated_stdout: bool = False
     truncated_stderr: bool = False
     duration_s: float = 0.0
+    gpu_enabled: bool = False
 
     @property
     def returncode(self) -> Optional[int]:
@@ -173,7 +174,7 @@ def _collect_artifacts(workdir: Path, exclude: set[str]) -> dict[str, bytes]:
 
 # === MAIN ENTRYPOINT ===
 
-def execute_sandboxed(code: str, timeout_s: Optional[int] = None, _skip_preflight: bool = False) -> SandboxResult:
+def execute_sandboxed(code: str, timeout_s: Optional[int] = None, gpu_access: bool = False, _skip_preflight: bool = False) -> SandboxResult:
     """
     Execute untrusted Python code in a Docker + gVisor sandbox.
 
@@ -200,6 +201,7 @@ def execute_sandboxed(code: str, timeout_s: Optional[int] = None, _skip_prefligh
                 stderr=f"preflight: {reason}",
                 exit_code=-1,
                 duration_s=time.monotonic() - start_time,
+                gpu_enabled=False,
             )
 
     # ---- Layer 2: Syntax check (saves a Docker startup on broken code) ----
@@ -213,6 +215,7 @@ def execute_sandboxed(code: str, timeout_s: Optional[int] = None, _skip_prefligh
             status=SandboxStatus.SYNTAX_ERROR,
             stderr=f"line {e.lineno}: {e.msg}",
             duration_s=time.monotonic() - start_time,
+            gpu_enabled=False,
         )
 
     # ---- Layer 3: Per-call isolated workdir ----
@@ -274,12 +277,14 @@ def execute_sandboxed(code: str, timeout_s: Optional[int] = None, _skip_prefligh
                 stderr=f"execution exceeded {timeout_s}s",
                 duration_s=time.monotonic() - start_time,
                 runtime_used=DOCKER_RUNTIME,
+                gpu_enabled=gpu_access,
             )
         except FileNotFoundError:
             return SandboxResult(
                 status=SandboxStatus.DOCKER_MISSING,
                 stderr="docker not on PATH; is dockerd running?",
                 duration_s=time.monotonic() - start_time,
+                gpu_enabled=False,
             )
         except Exception as e:  # deliberately broad: host-side surprises
             return SandboxResult(
@@ -287,6 +292,7 @@ def execute_sandboxed(code: str, timeout_s: Optional[int] = None, _skip_prefligh
                 stderr=f"host-side: {type(e).__name__}: {e}",
                 duration_s=time.monotonic() - start_time,
                 runtime_used=DOCKER_RUNTIME,
+                gpu_enabled=gpu_access,
             )
 
         # ---- Process output ----
@@ -313,6 +319,7 @@ def execute_sandboxed(code: str, timeout_s: Optional[int] = None, _skip_prefligh
             truncated_stderr=stderr_trunc,
             duration_s=time.monotonic() - start_time,
             runtime_used=DOCKER_RUNTIME,
+            gpu_enabled=gpu_access,
         )
 
     finally:

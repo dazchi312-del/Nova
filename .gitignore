@@ -45,3 +45,10 @@ htmlcov/
 
 # Matplotlib / tool font caches
 fontlist-*.json
+
+# Backup files from surgical edits
+*.bak
+*.bak.*
+
+# Claude Code local handoff scratch
+.claude/
