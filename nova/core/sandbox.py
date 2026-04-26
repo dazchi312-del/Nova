@@ -1,4 +1,4 @@
-# sandbox.py v2.1.0
+# sandbox.py v2.2.0
 # Location: nova/core/sandbox.py
 # Purpose: Docker + gVisor isolated execution for LLM-generated code
 #
@@ -313,9 +313,9 @@ def execute_sandboxed(code: str, timeout_s: Optional[int] = None, gpu_access: bo
 
         # Note: we collect artifact NAMES, not contents. The caller can read
         # them from workdir if needed — but workdir is deleted in finally!
-        # For v2.1 that's acceptable; in a later version, move artifacts to
+        # For v2.2 that is acceptable; in a later version, move artifacts to
         # a persistent location before cleanup if Reflector needs them.
-        # TODO v2.2: persistent artifact store
+        # TODO v2.3: persistent artifact store (Reflector-readable across cleanup)
 
         return SandboxResult(
             status=(SandboxStatus.SUCCESS if proc.returncode == 0 else SandboxStatus.OOM_KILLED if proc.returncode == 137 else SandboxStatus.ERROR),
@@ -341,7 +341,7 @@ def execute_sandboxed(code: str, timeout_s: Optional[int] = None, gpu_access: bo
 # Real tests go in tests/test_sandbox.py with pytest.
 
 if __name__ == "__main__":
-    print("=== Sandbox v2.1.0 smoke tests ===\n")
+    print("=== Sandbox v2.2.0 smoke tests ===\n")
 
     cases = [
         ("safe code", "print('hello'); import math; print(math.pi)"),
