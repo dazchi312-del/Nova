@@ -241,10 +241,14 @@ def execute_sandboxed(code: str, timeout_s: Optional[int] = None, gpu_access: bo
         # ---- Layer 4: The real security boundary — the container ----
         # Every flag below is deliberate. If you don't know why one is there,
         # look it up before removing it.
+        # AD-133: GPU access requires the nvidia runtime; gVisor (runsc) does
+        # not support CUDA passthrough. When gpu_access=True we trade the
+        # user-space kernel boundary for hardware acceleration. Caller's choice.
+        active_runtime = "nvidia" if gpu_access else DOCKER_RUNTIME
         docker_cmd = [
             "docker", "run",
             "--rm",                                   # auto-delete container on exit
-            f"--runtime={DOCKER_RUNTIME}",            # gVisor user-space kernel
+            f"--runtime={active_runtime}",            # nvidia w/ GPU, else runsc/runc
             "--network=none",                         # no network access at all
             "--memory=512m",                          # RAM cap; OOM-kill if exceeded
             "--memory-swap=512m",                     # Disable swap; force OOM at cap
@@ -257,6 +261,10 @@ def execute_sandboxed(code: str, timeout_s: Optional[int] = None, gpu_access: bo
             "--security-opt=no-new-privileges",       # block setuid/setgid escalation
             "-v", f"{workdir.resolve()}:/workspace:rw", # our workdir is the only writable mount
             "-w", "/workspace",
+        ]
+        if gpu_access:
+            docker_cmd.append("--gpus=all")
+        docker_cmd += [
             DOCKER_IMAGE,
             "python", "/workspace/user_code.py",
         ]
@@ -276,7 +284,7 @@ def execute_sandboxed(code: str, timeout_s: Optional[int] = None, gpu_access: bo
                 status=SandboxStatus.TIMEOUT,
                 stderr=f"execution exceeded {timeout_s}s",
                 duration_s=time.monotonic() - start_time,
-                runtime_used=DOCKER_RUNTIME,
+                runtime_used=active_runtime,
                 gpu_enabled=gpu_access,
             )
         except FileNotFoundError:
@@ -291,7 +299,7 @@ def execute_sandboxed(code: str, timeout_s: Optional[int] = None, gpu_access: bo
                 status=SandboxStatus.EXCEPTION,
                 stderr=f"host-side: {type(e).__name__}: {e}",
                 duration_s=time.monotonic() - start_time,
-                runtime_used=DOCKER_RUNTIME,
+                runtime_used=active_runtime, 
                 gpu_enabled=gpu_access,
             )
 
@@ -318,7 +326,7 @@ def execute_sandboxed(code: str, timeout_s: Optional[int] = None, gpu_access: bo
             truncated_stdout=stdout_trunc,
             truncated_stderr=stderr_trunc,
             duration_s=time.monotonic() - start_time,
-            runtime_used=DOCKER_RUNTIME,
+            runtime_used=active_runtime,
             gpu_enabled=gpu_access,
         )
 
