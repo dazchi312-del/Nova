@@ -1,3 +1,6 @@
+# DEPRECATED (pre-Phase-1): see nova/core/episodic.py for Tier 1 substrate.
+# Retained for compatibility; do not extend. Removal tracked in future ADR.
+
 """
 core/memory.py
 L6 Memory Layer — SQLite session logging + context retrieval
