@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import unicodedata
 from dataclasses import dataclass, field, asdict
 from datetime import datetime, timezone
 from typing import Any
@@ -48,15 +49,26 @@ class Episode:
         if not self.hash:
             object.__setattr__(self, "hash", self._compute_hash())
 
+    @staticmethod
+    def _nfc(obj: Any) -> Any:
+        """Recursively NFC-normalize all strings in a JSON-compatible structure."""
+        if isinstance(obj, str):
+            return unicodedata.normalize("NFC", obj)
+        if isinstance(obj, dict):
+            return {Episode._nfc(k): Episode._nfc(v) for k, v in obj.items()}
+        if isinstance(obj, list):
+            return [Episode._nfc(v) for v in obj]
+        return obj
+
     def _canonical_payload(self) -> str:
-        """Canonical JSON: sorted keys, no whitespace, hash field excluded."""
+        """Canonical JSON: NFC-normalized, sorted keys, no whitespace, hash excluded."""
         payload = {
-            "timestamp": self.timestamp,
-            "kind": self.kind,
-            "content": self.content,
-            "context": self.context,
+            "timestamp": self._nfc(self.timestamp),
+            "kind": self._nfc(self.kind),
+            "content": self._nfc(self.content),
+            "context": self._nfc(self.context),
         }
-        return json.dumps(payload, sort_keys=True, separators=(",", ":"))
+        return json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
 
     def _compute_hash(self) -> str:
         return hashlib.sha256(self._canonical_payload().encode("utf-8")).hexdigest()
