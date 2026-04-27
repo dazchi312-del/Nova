@@ -15,10 +15,10 @@ from openai import OpenAI
 class Reflector:
     def __init__(self, config: dict):
         self.client = OpenAI(
-            base_url=config.get("base_url", "http://localhost:1234/v1"),
+            base_url=config.get("base_url", "http://10.0.0.167:11434/v1"),
             api_key=config.get("api_key", "lm-studio"),
         )
-        self.model      = config.get("reflection_model", "llama-3.1-nemotron-70b-instruct-hf")
+        self.model      = config.get("reflection_model", "llama3.1:8b")
         self.threshold  = config.get("reflection_threshold", 0.75)
         self.dimensions = ["accuracy", "coherence", "identity_alignment", "utility"]
 
@@ -133,9 +133,9 @@ if __name__ == "__main__":
     print("Running standalone Reflector test...")
 
     config = {
-        "base_url":           "http://localhost:1234/v1",
+        "base_url":           "http://10.0.0.167:11434/v1",
         "api_key":            "lm-studio",
-        "reflection_model":   "llama-3.1-nemotron-70b-instruct-hf",
+        "reflection_model":   "llama3.1:8b",
         "reflection_threshold": 0.75,
     }
 

@@ -333,7 +333,7 @@ Respond in JSON format:
         try:
             import requests
             response = requests.post(
-                "http://192.168.100.2:11434/api/generate",
+                "http://10.0.0.167:11434/api/generate",
                 json={
                     "model": "llama3.1:8b",
                     "prompt": reflection_prompt,

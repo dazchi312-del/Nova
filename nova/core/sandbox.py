@@ -29,7 +29,7 @@ from typing import Optional
 # Pinned by digest would be better (see TODO). Unpinned means the image can
 # change under us when upstream rebuilds. Acceptable for local dev; not for prod.
 # TODO: pin to python:3.11-slim@sha256:<digest>
-DOCKER_IMAGE = "python:3.11-slim"
+DOCKER_IMAGE = "nova-sandbox:0.1"
 
 # Runtime detection: prefer gVisor (runsc), fall back to runc.
 # Override via NOVA_SANDBOX_RUNTIME env var for CI/dev flexibility.

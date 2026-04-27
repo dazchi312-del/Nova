@@ -31,6 +31,7 @@ import requests
 
 from nova.core.ast_shield import shield_gate
 from nova.core.sandbox import execute_sandboxed, SandboxResult, SandboxStatus
+from nova.core.memory import remember  
 
 log = logging.getLogger("nova.loop")
 
@@ -46,11 +47,11 @@ class LoopConfig:
     auto_reject_threshold: float = 0.50
     auto_reject_streak: int = 2  # reject if N consecutive below threshold
 
-    dreamer_url: str = "http://localhost:1234/v1/chat/completions"
-    dreamer_model: str = "llama-3.1-nemotron-70b-instruct-hf"
+    dreamer_url: str = "http://10.0.0.167:11434/v1/chat/completions"
+    dreamer_model: str = "llama3.1:8b"
     dreamer_timeout_s: int = 180
 
-    reflector_url: str = "http://192.168.100.2:11434/api/generate"
+    reflector_url: str = "http://10.0.0.167:11434/api/generate"
     reflector_model: str = "llama3.1:8b"
     reflector_timeout_s: int = 30
     reflector_retries: int = 1
@@ -205,8 +206,8 @@ def call_reflector(
         f"GOAL: {goal}\n"
         f"--- CODE ---\n{code[:3000]}\n"
         f"--- EXECUTION STATUS --- {sandbox.status}\n"
-        f"--- STDOUT ---\n{sandbox.stdout[:1500]}\n"
-        f"--- STDERR ---\n{sandbox.stderr[:500]}\n"
+        f"--- STDOUT ---\n{(sandbox.stdout or "")[:1500]}\n"
+        f"--- STDERR ---\n{(sandbox.stderr or "")[:500]}\n"
     )
     payload = {
         "model": cfg.reflector_model,
@@ -325,6 +326,21 @@ def dream_loop(
         iterations.append(rec)
         _write_iteration(exp_dir, rec)  # durable after EVERY iteration
 
+        _safe_remember(
+            "iteration",
+            content=f"{experiment_id}/iter{rec.iteration:03d}",
+            context={
+                "experiment_id": experiment_id,
+                "iteration": rec.iteration,
+                "code_hash": rec.code_hash,
+                "status": rec.status.value,
+                "dreamer_duration_s": rec.dreamer_duration_s,
+                "sandbox_duration_s": rec.sandbox_duration_s,
+                "reflector_duration_s": rec.reflector_duration_s,
+                "overall_score": rec.score.overall if rec.score else None,
+            },
+        )
+
         log.info("[ITER %d] status=%s score=%.2f",
                  i, rec.status.value,
                  rec.score.overall if rec.score else 0.0)
@@ -359,10 +375,23 @@ def dream_loop(
         stopped_reason=stopped_reason,
     )
     _write_summary(exp_dir, result)
+
+    _safe_remember(
+        "experiment",
+        content=f"{experiment_id}/summary",
+        context={
+            "experiment_id": experiment_id,
+            "goal": goal,
+            "best_iteration": best_idx,
+            "final_score": best_score,
+            "stopped_reason": stopped_reason,
+            "iteration_count": len(iterations),
+        },
+    )
+
     log.info("[DREAM] done exp=%s best_iter=%s score=%.2f reason=%s",
              experiment_id, best_idx, best_score, stopped_reason)
-    return result
-
+    return result  
 
 def _run_one_iteration(
     i: int, hypothesis: str, goal: str, critique: str, cfg: LoopConfig
@@ -459,6 +488,13 @@ def _atomic_write(path: Path, data: str) -> None:
     tmp.write_text(data, encoding="utf-8")
     os.replace(tmp, path)
 
+def _safe_remember(kind: str, *, content: str, context: dict) -> None:
+    """Record an episode; never raise. Memory is best-effort from the loop."""
+    try:
+        remember(kind, content=content, context=context)
+    except Exception as e:
+        log.warning("memory.remember(%r) failed: %s", kind, e)
+
 
 def _write_iteration(exp_dir: Path, rec: IterationRecord) -> None:
     stem = f"iter{rec.iteration:03d}"
@@ -504,8 +540,8 @@ if __name__ == "__main__":
     )
     result = dream_loop(
         experiment_id=f"smoke_{int(time.time())}",
-        initial_hypothesis="The sine function is smoother than a random walk on [0, 4π].",
-        goal="Plot both curves and quantify smoothness via total variation.",
+        initial_hypothesis="The Central Limit Theorem predicts that the mean of N independent samples from a finite-variance distribution approaches a normal distribution with mean mu and standard deviation sigma/sqrt(N).",
+        goal="Generate 10000 trials of the sample mean of N=30 draws from an exponential distribution with lambda=1.0 (true mean=1.0, true std=1.0, so sample-mean std should approach 1/sqrt(30)=0.1826). Compute the empirical mean and empirical std of the 10000 sample means. Print absolute and relative error for both against the theoretical predictions. Print 'PASS' if both relative errors are below 5 percent, else print 'FAIL' followed by the offending values.",
     )
     print(f"[DONE] best score = {result.final_score:.2f}, "
           f"stopped = {result.stopped_reason}")
