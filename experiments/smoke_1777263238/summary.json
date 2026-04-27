@@ -1,0 +1,36 @@
+{
+  "experiment_id": "smoke_1777263238",
+  "goal": "Generate 10000 trials of the sample mean of N=30 draws from an exponential distribution with lambda=1.0 (true mean=1.0, true std=1.0, so sample-mean std should approach 1/sqrt(30)=0.1826). Compute the empirical mean and empirical std of the 10000 sample means. Print absolute and relative error for both against the theoretical predictions. Print 'PASS' if both relative errors are below 5 percent, else print 'FAIL' followed by the offending values.",
+  "initial_hypothesis": "The Central Limit Theorem predicts that the mean of N independent samples from a finite-variance distribution approaches a normal distribution with mean mu and standard deviation sigma/sqrt(N).",
+  "best_iteration_index": 2,
+  "final_score": 0.93,
+  "stopped_reason": "max_iterations",
+  "iteration_count": 5,
+  "scores": [
+    {
+      "iter": 1,
+      "status": "ok",
+      "overall": 0.9
+    },
+    {
+      "iter": 2,
+      "status": "ok",
+      "overall": 0.93
+    },
+    {
+      "iter": 3,
+      "status": "ok",
+      "overall": 0.88
+    },
+    {
+      "iter": 4,
+      "status": "ok",
+      "overall": 0.88
+    },
+    {
+      "iter": 5,
+      "status": "ok",
+      "overall": 0.88
+    }
+  ]
+}

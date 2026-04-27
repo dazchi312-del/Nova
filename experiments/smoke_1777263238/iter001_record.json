@@ -1,0 +1,24 @@
+{
+  "iteration": 1,
+  "started_at": "2026-04-27T04:13:58.838732+00:00",
+  "ended_at": "2026-04-27T04:14:20.176948+00:00",
+  "status": "ok",
+  "hypothesis": "The Central Limit Theorem predicts that the mean of N independent samples from a finite-variance distribution approaches a normal distribution with mean mu and standard deviation sigma/sqrt(N).",
+  "critique_applied": "",
+  "code": "import numpy as np\nimport matplotlib.pyplot as plt\n\n# Set seed for reproducibility\nnp.random.seed(0)\n\n# Parameters of the exponential distribution\nmu = 1.0\nsigma = 1.0\n\n# Sample size\nN = 30\n\n# Number of trials\nnum_trials = 10000\n\n# Initialize arrays to store sample means\nsample_means = np.zeros(num_trials)\n\n# Generate trial sample means and compute empirical mean and std\nfor i in range(num_trials):\n    # Draw N samples from the exponential distribution\n    samples = np.random.exponential(scale=sigma, size=N)\n    \n    # Compute the sample mean\n    sample_mean = np.mean(samples)\n    \n    # Store the sample mean\n    sample_means[i] = sample_mean\n\n# Compute empirical mean and std of the 10000 sample means\nempirical_mean = np.mean(sample_means)\nempirical_std = np.std(sample_means)\n\n# Compute theoretical predictions\ntheoretical_mean = mu\ntheoretical_std = sigma / np.sqrt(N)\n\n# Print absolute and relative errors for both\nprint(f\"Absolute error in empirical mean: {np.abs(empirical_mean - theoretical_mean)}\")\nprint(f\"Relative error in empirical mean: {np.abs((empirical_mean - theoretical_mean) / theoretical_mean) * 100}%\")\nprint(f\"Absolute error in empirical std: {np.abs(empirical_std - theoretical_std)}\")\nprint(f\"Relative error in empirical std: {np.abs((empirical_std - theoretical_std) / theoretical_std) * 100}%\")\n\n# Print pass/fail message\nif np.abs((empirical_mean - theoretical_mean) / theoretical_mean) * 100 < 5 and np.abs((empirical_std - theoretical_std) / theoretical_std) * 100 < 5:\n    print('PASS')\nelse:\n    print('FAIL')\n    \n    # Store offending values in a dictionary\n    offending_values = {\n        'Empirical mean': empirical_mean,\n        'Theoretical mean': theoretical_mean,\n        'Relative error in empirical mean': np.abs((empirical_mean - theoretical_mean) / theoretical_mean) * 100,\n        'Empirical std': empirical_std,\n        'Theoretical std': theoretical_std,\n        'Relative error in empirical std': np.abs((empirical_std - theoretical_std) / theoretical_std) * 100\n    }\n    \n    # Print offending values\n    for key, value in offending_values.items():\n        print(f\"{key}: {value}%\")\n\n# Plot histogram of sample means\nplt.hist(sample_means, bins=50, density=True)\nplt.xlabel('Sample Mean')\nplt.ylabel('Frequency')\nplt.title('Histogram of Sample Means')\nplt.savefig('output.png')\n\nprint(\"Plot saved as output.png\")",
+  "code_hash": "42f62a94b0ff10d9",
+  "sandbox_status": "SandboxStatus.SUCCESS",
+  "sandbox_stdout": "Absolute error in empirical mean: 4.6771173256798804e-05\nRelative error in empirical mean: 0.00467711732567988%\nAbsolute error in empirical std: 0.0024927006471062163\nRelative error in empirical std: 1.3653083735277995%\nPASS\nPlot saved as output.png\n",
+  "sandbox_stderr": "Matplotlib created a temporary cache directory at /tmp/matplotlib-eynrymhg because the default path (/nonexistent/.config/matplotlib) is not a writable directory; it is highly recommended to set the MPLCONFIGDIR environment variable to a writable directory, in particular to speed up the import of Matplotlib and to better support multiprocessing.\n",
+  "sandbox_duration_s": 1.5722673749987734,
+  "dreamer_duration_s": 15.366053715995804,
+  "reflector_duration_s": 6.332446959997469,
+  "score": {
+    "overall": 0.9,
+    "elegance": 0.85,
+    "creative_alignment": 0.95,
+    "safety_risk": 0.0,
+    "reasoning": "The code is well-structured, idiomatic Python, and effectively tests the Central Limit Theorem hypothesis. However, it could benefit from some minor improvements in elegance (e.g., using a more descriptive variable name instead of `sigma` for the exponential distribution's parameter). The safety risk is low since the code is clean and free of potential issues. Overall, the code is effective and well-judged."
+  },
+  "error": ""
+}
