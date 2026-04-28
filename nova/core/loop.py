@@ -47,17 +47,19 @@ class LoopConfig:
     auto_reject_threshold: float = 0.50
     auto_reject_streak: int = 2  # reject if N consecutive below threshold
 
-    dreamer_url: str = "http://10.0.0.167:11434/v1/chat/completions"
-    dreamer_model: str = "llama3.1:8b"
+    dreamer_url: str = "http://10.0.0.195:1234/v1/chat/completions"
+    dreamer_model: str = "llama-3.1-nemotron-70b-instruct-hf"
     dreamer_timeout_s: int = 180
 
-    reflector_url: str = "http://10.0.0.167:11434/api/generate"
+    reflector_url: str = "http://10.0.0.167:11434/v1/chat/completions"
     reflector_model: str = "llama3.1:8b"
     reflector_timeout_s: int = 30
     reflector_retries: int = 1
 
     sandbox_timeout_s: int = 30
     experiments_root: Path = Path("experiments")
+    min_consideration_ms: int = 500    # Phase 9: forced consideration pause (gating not yet wired)
+    dry_run: bool = False  # if True, skip sandbox execution
 
 
 # ===== ITERATION RECORD =====
@@ -81,6 +83,7 @@ class ReflectorScore:
     elegance: Optional[float] = None
     creative_alignment: Optional[float] = None
     safety_risk: Optional[float] = None       # HIGH is BAD here
+    presence: Optional[float] = None          # Phase 9: rumination signal (HIGH is BAD; gating not yet wired)
     reasoning: str = ""                       # the LLM's justification
 
     @classmethod
@@ -211,16 +214,19 @@ def call_reflector(
     )
     payload = {
         "model": cfg.reflector_model,
-        "prompt": prompt,
-        "stream": False,
-        "options": {"temperature": 0.2, "num_predict": 200},
+        "messages": [
+            {"role": "system", "content": "You are Nova's Reflector, a precise code evaluator."},
+            {"role": "user", "content": prompt}
+        ],
+        "temperature": 0.2,
+        "max_tokens": 200,
     }
 
     last_err = ""
     for attempt in range(cfg.reflector_retries + 1):
         try:
             data = _post_json(cfg.reflector_url, payload, cfg.reflector_timeout_s)
-            return _parse_reflector_response(data.get("response", ""))
+            return _parse_reflector_response(data.get("choices", [{}])[0].get("message", {}).get("content", ""))
         except requests.exceptions.Timeout:
             last_err = "timeout"
         except requests.exceptions.ConnectionError:
@@ -246,6 +252,7 @@ def _parse_reflector_response(text: str) -> ReflectorScore:
         elegance=grab("ELEGANCE"),
         creative_alignment=grab("CREATIVE_ALIGNMENT"),
         safety_risk=grab("SAFETY_RISK"),
+        presence=grab("PRESENCE"),
         reasoning=(reason_m.group(1).strip() if reason_m else "")[:500],
     )
 
@@ -406,6 +413,10 @@ def _run_one_iteration(
         critique_applied=critique,
     )
 
+    # --- Presence pause (consideration before action) ---
+    if cfg.min_consideration_ms > 0:
+        time.sleep(cfg.min_consideration_ms / 1000.0)
+
     # --- Dreamer ---
     t0 = time.monotonic()
     try:
@@ -427,9 +438,19 @@ def _run_one_iteration(
     rec.code_hash = hashlib.sha256(rec.code.encode("utf-8")).hexdigest()[:16]
 
     # --- Sandbox (with Shield) ---
-    t0 = time.monotonic()
-    sandbox = _run_sandboxed(rec.code, cfg)
-    rec.sandbox_duration_s = time.monotonic() - t0
+    if cfg.dry_run:
+        log.info("[DRY-RUN] Skipping sandbox execution for iteration %d", i)
+        sandbox = SandboxResult(
+            status=SandboxStatus.SUCCESS,
+            stdout="[DRY-RUN] Execution skipped",
+            stderr="",
+            exit_code=0,
+        )
+        rec.sandbox_duration_s = 0.0
+    else:
+        t0 = time.monotonic()
+        sandbox = _run_sandboxed(rec.code, cfg)
+        rec.sandbox_duration_s = time.monotonic() - t0
     rec.sandbox_status = str(sandbox.status)
     rec.sandbox_stdout = sandbox.stdout
     rec.sandbox_stderr = sandbox.stderr
@@ -533,15 +554,57 @@ def _now_iso() -> str:
 
 # ===== ENTRY =====
 
+def _parse_args():
+    import argparse
+    parser = argparse.ArgumentParser(
+        description="Nova Dream Loop - iterative code generation with reflection"
+    )
+    parser.add_argument(
+        "--dry-run", action="store_true",
+        help="Preview iterations without executing sandbox code"
+    )
+    parser.add_argument(
+        "--max-iterations", type=int, default=5,
+        help="Maximum number of dream/execute/reflect cycles"
+    )
+    parser.add_argument(
+        "--goal", type=str,
+        default="Generate and validate a simple Python function",
+        help="Goal description for the dreamer"
+    )
+    parser.add_argument(
+        "--hypothesis", type=str,
+        default="A well-structured function can be generated iteratively",
+        help="Initial hypothesis to explore"
+    )
+    parser.add_argument(
+        "--experiment-id", type=str, default=None,
+        help="Experiment identifier (default: smoke_<timestamp>)"
+    )
+    return parser.parse_args()
+
+
 if __name__ == "__main__":
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     )
+    args = _parse_args()
+    
+    exp_id = args.experiment_id or f"smoke_{int(time.time())}"
+    cfg = LoopConfig(
+        max_iterations=args.max_iterations,
+        dry_run=args.dry_run,
+    )
+    
+    if cfg.dry_run:
+        log.info("[DRY-RUN] Sandbox execution will be skipped")
+    
     result = dream_loop(
-        experiment_id=f"smoke_{int(time.time())}",
-        initial_hypothesis="The Central Limit Theorem predicts that the mean of N independent samples from a finite-variance distribution approaches a normal distribution with mean mu and standard deviation sigma/sqrt(N).",
-        goal="Generate 10000 trials of the sample mean of N=30 draws from an exponential distribution with lambda=1.0 (true mean=1.0, true std=1.0, so sample-mean std should approach 1/sqrt(30)=0.1826). Compute the empirical mean and empirical std of the 10000 sample means. Print absolute and relative error for both against the theoretical predictions. Print 'PASS' if both relative errors are below 5 percent, else print 'FAIL' followed by the offending values.",
+        experiment_id=exp_id,
+        initial_hypothesis=args.hypothesis,
+        goal=args.goal,
+        cfg=cfg,
     )
     print(f"[DONE] best score = {result.final_score:.2f}, "
           f"stopped = {result.stopped_reason}")
