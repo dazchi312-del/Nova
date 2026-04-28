@@ -25,7 +25,7 @@ class Reflector:
             base_url=config.get("base_url", "http://10.0.0.167:11434/v1"),
             api_key=config.get("api_key", "lm-studio"),
         )
-        self.model     = config.get("reflection_model", "llama3.1:8b")
+        self.model = config.get("reflection_model", "phi4:latest")
         self.threshold = config.get("reflection_threshold", 0.75)
         self.chat_dimensions = ["accuracy", "coherence", "identity_alignment", "utility"]
         self.exp_dimensions  = ["goal_satisfaction", "verdict_evidence", "accuracy", "coherence"]
@@ -226,7 +226,7 @@ class Reflector:
 if __name__ == "__main__":
     config = {
         "base_url":             "http://10.0.0.167:11434/v1",
-        "reflection_model":     "llama3.1:8b",
+        "reflection_model": "phi4:latest",
         "reflection_threshold": 0.75,
     }
     r = Reflector(config)
