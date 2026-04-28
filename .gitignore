@@ -52,3 +52,4 @@ fontlist-*.json
 
 # Claude Code local handoff scratch
 .claude/
+experiments/smoke_*/
