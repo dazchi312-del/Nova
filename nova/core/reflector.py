@@ -57,7 +57,9 @@ class Reflector:
                 messages=messages,
                 temperature=0.1,
                 max_tokens=512,
+                response_format={"type": "json_object"},  # TD-002: force JSON mode
             )
+
             raw = completion.choices[0].message.content or ""
             result = self._parse_evaluation(raw, dimensions)
         except Exception as e:
@@ -195,13 +197,24 @@ class Reflector:
             print(f"[Reflector] JSON parse error: {e}")
             return self._fallback(expected_dims)
 
-        dimensions = data.get("dimensions", {})
+        raw_dims   = data.get("dimensions", {}) or {}
         score      = data.get("score", 0.0)
-        flags      = data.get("flags", [])
+        flags      = data.get("flags", []) or []
         reasoning  = data.get("reasoning", "")
 
+        # TD-002: normalize keys (Phi-4 drifts on case/separators)
+        dimensions = {
+            self._normalize_key(k): v
+            for k, v in raw_dims.items()
+            if isinstance(v, (int, float))
+        }
+
+        # TD-002: ensure all expected dimensions present (default 0.0 if missing)
+        for d in expected_dims:
+            dimensions.setdefault(d, 0.0)
+
         if score == 0.0 and dimensions:
-            values = [v for v in dimensions.values() if isinstance(v, (int, float))]
+            values = list(dimensions.values())
             if values:
                 score = sum(values) / len(values)
 
@@ -211,6 +224,12 @@ class Reflector:
             "dimensions": {k: round(float(v), 4) for k, v in dimensions.items()},
             "reasoning":  str(reasoning),
         }
+
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _normalize_key(k: str) -> str:
+        """TD-002: Phi-4 sometimes returns 'Goal_Satisfaction' or 'goal-satisfaction'."""
+        return k.strip().lower().replace("-", "_").replace(" ", "_")
 
     # ------------------------------------------------------------------
     def _fallback(self, dimensions: list) -> dict:
