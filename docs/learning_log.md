@@ -21,3 +21,10 @@ extraction) and Block E (Tutor Mode).
 
 **Tech debt unchanged:** TD-001, TD-002, TD-003 all still open.
 
+
+## Session 37 — Indentation-Scope Bug in reflector.py
+
+append_to_learning_log was defined inside the Reflector class block due to a four-space indent on the surrounding comment and import statements. Python parsed it as a method (legal but wrong); module-level import failed silently with ImportError. Fix: dedent lines 305-328 to column 0, hoist imports to top of file. No callers existed, so no API impact.
+
+Lesson: same family as the base_url/IP regression — manual edits that *look* right but land in the wrong scope. Mitigation: after edits near class boundaries, run `grep -n "^def \|^    def " <file>` to verify intended scope.
+

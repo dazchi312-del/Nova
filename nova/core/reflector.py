@@ -109,6 +109,31 @@ class Reflector:
         return result
 
     # ------------------------------------------------------------------
+    def explain(self, score_result: dict, prompt: str, response: str) -> dict:  
+        """
+        Tutor mode: take a completed score_result and ask the LLM to
+        explain *why* those scores landed where they did. Returns markdown
+        suitable for appending to docs/learning_log.md.
+
+        Unlike evaluate(), this does NOT use JSON mode — we want prose.
+        """ 
+        messages = self._build_explainer_prompt(score_result, prompt, response)
+        try:
+            completion = self.client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                temperature=0.4,   # higher: we want explanation, not extraction
+                max_tokens=800,
+            )
+            raw = completion.choices[0].message.content or ""
+            return {"markdown": raw.strip(), "raw": raw}
+        except Exception as e:
+            print(f"[Reflector] explain() error: {e}")
+            return {
+                "markdown": f"_Tutor explanation unavailable: {e}_",
+                "raw": "",
+            }  
+    # ------------------------------------------------------------------
     def _build_chat_prompt(self, prompt: str, response: str) -> list:
         """Legacy chat-mode evaluation prompt."""
         dim_keys = self.chat_dimensions
@@ -180,6 +205,41 @@ class Reflector:
         ]
 
     # ------------------------------------------------------------------
+    def _build_explainer_prompt(
+        self, score_result: dict, prompt: str, response: str
+    ) -> list:
+        """Tutor-mode prompt: explain scores pedagogically in markdown."""
+        dims_str = "\n".join(
+            f"- **{k}**: {v:.2f}" for k, v in score_result.get("dimensions", {}).items()
+        )
+        flags_str = ", ".join(score_result.get("flags", [])) or "none"
+        score = score_result.get("score", 0.0)
+
+        system = (
+            "You are a tutor explaining an evaluation to a developer who is "
+            "learning to build AI systems. Be specific, concrete, and pedagogical. "
+            "Reference exact phrases from the response when possible. "
+            "Output GitHub-flavored markdown, no JSON."
+        )
+        user = (
+            f"## Context\n\n"
+            f"**Prompt given to model:**\n```\n{prompt}\n```\n\n"
+            f"**Model's response:**\n```\n{response}\n```\n\n"
+            f"## Scores\n\n"
+            f"- **Overall:** {score:.2f}\n"
+            f"{dims_str}\n"
+            f"- **Flags:** {flags_str}\n\n"
+            f"## Your task\n\n"
+            f"Explain in 3–5 short paragraphs:\n"
+            f"1. Why each dimension scored where it did (cite the response).\n"
+            f"2. What the flags (if any) indicate.\n"
+            f"3. One concrete suggestion for improving the response.\n"
+        )
+        return [
+            {"role": "system", "content": system},
+            {"role": "user",   "content": user},
+        ]
+    # ------------------------------------------------------------------
     def _parse_evaluation(self, raw: str, expected_dims: list) -> dict:
         text = raw.strip()
         if text.startswith("```"):
@@ -239,6 +299,33 @@ class Reflector:
             "dimensions": {d: 0.0 for d in dimensions},
             "reasoning":  "",
         }
+
+    # ----------------------------------------------------------------------
+    # Learning log utility (Block E: Tutor Mode)
+    # ----------------------------------------------------------------------
+    import os
+    from datetime import date
+
+    # ----------------------------------------------------------------------
+def append_to_learning_log(
+    section: str,
+    body: str,
+    log_path: str = "docs/learning_log.md",
+) -> None:
+    """
+    Append a new section to the learning log. Matches the existing
+    convention: '## {section}' header, blank line, body, trailing blank.
+
+    Creates the file (and parent dirs) if missing.
+    """
+    os.makedirs(os.path.dirname(log_path) or ".", exist_ok=True)
+    header = f"## {section}\n\n"
+    block  = header + body.rstrip() + "\n\n"
+    mode   = "a" if os.path.exists(log_path) else "w"
+    with open(log_path, mode, encoding="utf-8") as f:
+        if mode == "a":
+            f.write("\n")
+        f.write(block)
 
 
 # ----------------------------------------------------------------------
