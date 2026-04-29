@@ -1,3 +1,13 @@
+[project]
+name = "nova"
+version = "0.8.4"
+description = "Nova: a local-first imaginative cognition system."
+requires-python = ">=3.11"
+dependencies = [
+    "openai>=2.32.0",
+    "requests>=2.33.0",
+]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
