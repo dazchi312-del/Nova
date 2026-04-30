@@ -10,6 +10,12 @@ from enum import Enum
 from datetime import datetime
 
 
+# Embedding model constants
+NOMIC_EMBED_DIM = 768
+NOMIC_MODEL_NAME = "nomic-embed-text-v1.5"
+EMBED_SOURCE_MAX_CHARS = 2000  # Path B: truncate content for embedding
+
+
 class ArtifactDomain(Enum):
     """Primary domain classification."""
     CODE = "code"
@@ -60,6 +66,32 @@ class StructuralMetadata:
 
 
 @dataclass
+class EmbeddingMetadata:
+    """
+    Vector embedding with provenance.
+    
+    Separates the geometric similarity signal (vector) from the
+    taste-alignment signal (resonance_score on RichArtifact).
+    
+    Path B (Phase 9 Block D): source_text is truncated raw content.
+    Future: source_text becomes shape descriptor composition once
+    Block C shape extraction lands.
+    """
+    vector: list[float]                    # the embedding itself
+    model: str                             # e.g., "nomic-embed-text-v1.5"
+    dim: int                               # vector length, asserted on init
+    source_text: str                       # what was fed to the embedder
+    generated_at: datetime = field(default_factory=datetime.now)
+    
+    def __post_init__(self):
+        if len(self.vector) != self.dim:
+            raise ValueError(
+                f"Embedding dim mismatch: declared {self.dim}, "
+                f"got {len(self.vector)}"
+            )
+
+
+@dataclass
 class RichArtifact:
     """
     Extended artifact with structural metadata for cross-domain resonance.
@@ -78,6 +110,9 @@ class RichArtifact:
     anchors: list[str] = field(default_factory=list)  # refs to references.md
     resonance_score: float = 0.0  # 0-1, alignment with taste
     
+    # Geometric similarity (Block D)
+    embedding: Optional[EmbeddingMetadata] = None
+    
     # Provenance
     created_at: datetime = field(default_factory=datetime.now)
     iteration_id: Optional[str] = None
@@ -86,8 +121,26 @@ class RichArtifact:
     def size_bytes(self) -> int:
         return len(self.content)
     
-    def to_dict(self) -> dict:
-        """Serialize for storage/API."""
+    def to_dict(self, include_vector: bool = False) -> dict:
+        """
+        Serialize for storage/API.
+        
+        Args:
+            include_vector: If True, include full embedding vector.
+                           Default False to keep log dumps lightweight
+                           (768 floats ≈ 11KB JSON per artifact).
+        """
+        embedding_dict = None
+        if self.embedding:
+            embedding_dict = {
+                "model": self.embedding.model,
+                "dim": self.embedding.dim,
+                "source_text": self.embedding.source_text,
+                "generated_at": self.embedding.generated_at.isoformat(),
+            }
+            if include_vector:
+                embedding_dict["vector"] = self.embedding.vector
+        
         return {
             "name": self.name,
             "domain": self.domain.value,
@@ -99,6 +152,7 @@ class RichArtifact:
             } if self.shape else None,
             "anchors": self.anchors,
             "resonance_score": self.resonance_score,
+            "embedding": embedding_dict,
             "created_at": self.created_at.isoformat(),
             "iteration_id": self.iteration_id
         }
@@ -135,11 +189,30 @@ def infer_domain(filename: str, content: bytes) -> ArtifactDomain:
         return ArtifactDomain.UNKNOWN
 
 
+def extract_embedding_source(content: bytes, max_chars: int = EMBED_SOURCE_MAX_CHARS) -> str:
+    """
+    Path B: Extract truncated text for embedding.
+    
+    Decodes bytes with error tolerance, truncates to max_chars.
+    Binary domains (audio/visual) will yield mostly empty/garbage strings —
+    those should skip embedding at the call site.
+    
+    Future (Path A upgrade): Replace this with shape descriptor composition
+    once Block C shape extraction is wired into enrich_artifact().
+    """
+    try:
+        text = content.decode("utf-8", errors="ignore")
+    except Exception:
+        return ""
+    return text[:max_chars]
+
+
 def enrich_artifact(name: str, content: bytes) -> RichArtifact:
     """
     Convert raw artifact to RichArtifact with inferred metadata.
     
     Shape extraction is deferred to Phase 9 full implementation.
+    Embedding is deferred to the embedder call site (does not happen here).
     """
     domain = infer_domain(name, content)
     
@@ -150,5 +223,6 @@ def enrich_artifact(name: str, content: bytes) -> RichArtifact:
         shape=None,  # TODO: Phase 9 shape extraction
         structure=None,  # TODO: Phase 9 structural analysis
         anchors=[],
-        resonance_score=0.0
+        resonance_score=0.0,
+        embedding=None,  # populated by embedder, not at enrichment time
     )
