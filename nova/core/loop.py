@@ -180,20 +180,38 @@ def _extract_code_block(text: str) -> str:
 # ===== REFLECTOR =====
 
 REFLECTOR_RUBRIC = """\
-You are Nova's Reflector. Score a code iteration on four axes (0.00–1.00):
+You are Nova's Reflector. Evaluate a code iteration on four axes plus an overall composite.
+Each value MUST be exactly one of: 0.00, 0.50, 1.00.
 
-- ELEGANCE: clarity, simplicity, idiomatic Python.
-- CREATIVE_ALIGNMENT: does the code test the stated hypothesis toward the goal?
-- SAFETY_RISK: higher means MORE risk (sketchy patterns, opaque logic). 0 = clean.
-- OVERALL: weighted composite (your judgment).
+AXES:
+- elegance: clarity, simplicity, idiomatic Python. 1.00 = clear and idiomatic.
+- creative_alignment: does the code test the stated hypothesis toward the goal?
+  1.00 = strongly engages the hypothesis.
+- safety_risk: HIGHER means MORE risk (sketchy patterns, opaque logic).
+  0.00 = clean, 1.00 = risky.
+- presence: scope discipline. Does every element of the code earn its place
+  against the stated goal, or does the code introduce unrequested matter
+  (extra libraries, adjacent problems, decorative scaffolding, speculative
+  abstractions, premature optimization)?
+  1.00 = nothing extraneous; the code is exactly as large as the goal requires.
+  0.50 = addresses the goal but includes one or two unrequested elements.
+  0.00 = substantially wandering; significant unrequested code.
 
-Respond in EXACTLY this format, nothing else:
-ELEGANCE: 0.XX
-CREATIVE_ALIGNMENT: 0.XX
-SAFETY_RISK: 0.XX
-OVERALL: 0.XX
-REASON: <one or two sentences>
+COMPOSITE:
+- overall: weighted composite reflecting your judgment. 1.00 = excellent overall.
+
+Respond with a SINGLE JSON object and nothing else. No prose, no code fences.
+Schema:
+{
+  "elegance": 0.00 | 0.50 | 1.00,
+  "creative_alignment": 0.00 | 0.50 | 1.00,
+  "safety_risk": 0.00 | 0.50 | 1.00,
+  "presence": 0.00 | 0.50 | 1.00,
+  "overall": 0.00 | 0.50 | 1.00,
+  "reason": "one or two sentences"
+}
 """
+
 
 
 def call_reflector(
@@ -203,27 +221,27 @@ def call_reflector(
     sandbox: SandboxResult,
     cfg: LoopConfig,
 ) -> ReflectorScore:
-    prompt = (
-        f"{REFLECTOR_RUBRIC}\n\n"
+    user_content = (
         f"HYPOTHESIS: {hypothesis}\n"
         f"GOAL: {goal}\n"
         f"--- CODE ---\n{code[:3000]}\n"
         f"--- EXECUTION STATUS --- {sandbox.status}\n"
-        f"--- STDOUT ---\n{(sandbox.stdout or "")[:1500]}\n"
-        f"--- STDERR ---\n{(sandbox.stderr or "")[:500]}\n"
+        f"--- STDOUT ---\n{(sandbox.stdout or '')[:1500]}\n"
+        f"--- STDERR ---\n{(sandbox.stderr or '')[:500]}\n"
     )
     payload = {
         "model": cfg.reflector_model,
         "messages": [
-            {"role": "system", "content": "You are Nova's Reflector, a precise code evaluator."},
-            {"role": "user", "content": prompt}
+            {"role": "system", "content": REFLECTOR_RUBRIC},
+            {"role": "user", "content": user_content},
         ],
         "temperature": 0.2,
-        "max_tokens": 200,
+        "max_tokens": 300,
     }
 
     last_err = ""
     for attempt in range(cfg.reflector_retries + 1):
+
         try:
             data = _post_json(cfg.reflector_url, payload, cfg.reflector_timeout_s)
             return _parse_reflector_response(data.get("choices", [{}])[0].get("message", {}).get("content", ""))
@@ -238,22 +256,67 @@ def call_reflector(
 
     return ReflectorScore.failed(last_err)
 
+_ANCHORS = (0.00, 0.50, 1.00)
 
-def _parse_reflector_response(text: str) -> ReflectorScore:
-    def grab(label: str) -> Optional[float]:
-        m = re.search(rf"{label}\s*:\s*([01](?:\.\d+)?)", text, re.IGNORECASE)
+
+def _snap(value: float, key: str) -> float:
+    """Snap a score to the nearest ADR-136 anchor; warn if drift > 0.05."""
+    clamped = max(0.0, min(1.0, value))
+    nearest = min(_ANCHORS, key=lambda a: abs(a - clamped))
+    if abs(nearest - clamped) > 0.05:
+        log.warning("reflector score drift on %s: %.3f -> %.2f", key, clamped, nearest)
+    return nearest
+
+
+def _parse_reflector_response(raw: str) -> ReflectorScore:
+    """
+    Parse Reflector output. JSON-first per ADR-136 contract; regex fallback
+    for legacy/malformed responses. All scores snapped to anchors {0.00, 0.50, 1.00}.
+    """
+    text = (raw or "").strip()
+
+    # Strip code fences if the model wrapped JSON despite instructions.
+    if text.startswith("```"):
+        text = text.strip("`")
+        if "\n" in text:
+            first, rest = text.split("\n", 1)
+            if first.strip().lower() in ("json", ""):
+                text = rest
+
+    # JSON-first path.
+    try:
+        start = text.find("{")
+        end = text.rfind("}")
+        if start != -1 and end != -1 and end > start:
+            obj = json.loads(text[start:end + 1])
+            return ReflectorScore(
+                overall=_snap(float(obj.get("overall", 0.5)), "overall"),
+                elegance=_snap(float(obj.get("elegance", 0.5)), "elegance"),
+                creative_alignment=_snap(float(obj.get("creative_alignment", 0.5)), "creative_alignment"),
+                safety_risk=_snap(float(obj.get("safety_risk", 0.5)), "safety_risk"),
+                presence=_snap(float(obj.get("presence", 0.5)), "presence"),
+                reasoning=str(obj.get("reason", "") or "").strip()[:500],
+            )
+    except (json.JSONDecodeError, ValueError, TypeError) as e:
+        log.warning("reflector JSON parse failed, falling back to regex: %s", e)
+
+    # Regex fallback: scan for "axis: 0.5" style patterns.
+    def _grab(axis: str, default: float = 0.5) -> float:
+        m = re.search(rf"{axis}\s*[:=]\s*(-?\d+(?:\.\d+)?)", text, re.IGNORECASE)
         if not m:
-            return None
-        return max(0.0, min(1.0, float(m.group(1))))
+            return default
+        try:
+            return float(m.group(1))
+        except ValueError:
+            return default
 
-    reason_m = re.search(r"REASON\s*:\s*(.+)", text, re.IGNORECASE | re.DOTALL)
     return ReflectorScore(
-        overall=grab("OVERALL") or 0.0,
-        elegance=grab("ELEGANCE"),
-        creative_alignment=grab("CREATIVE_ALIGNMENT"),
-        safety_risk=grab("SAFETY_RISK"),
-        presence=grab("PRESENCE"),
-        reasoning=(reason_m.group(1).strip() if reason_m else "")[:500],
+        overall=_snap(_grab("overall"), "overall"),
+        elegance=_snap(_grab("elegance"), "elegance"),
+        creative_alignment=_snap(_grab("creative_alignment"), "creative_alignment"),
+        safety_risk=_snap(_grab("safety_risk"), "safety_risk"),
+        presence=_snap(_grab("presence"), "presence"),
+        reasoning=text[:500],
     )
 
 
