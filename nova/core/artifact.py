@@ -8,11 +8,14 @@ from dataclasses import dataclass, field
 from typing import Optional, Any
 from enum import Enum
 from datetime import datetime
+from typing import TYPE_CHECKING, Optional
+if TYPE_CHECKING:
+    from nova.core.embedder import NomicEmbedder
 
 
 # Embedding model constants
 NOMIC_EMBED_DIM = 768
-NOMIC_MODEL_NAME = "nomic-embed-text-v1.5"
+NOMIC_MODEL_NAME = "nomic-embed-text:v1.5"
 EMBED_SOURCE_MAX_CHARS = 2000  # Path B: truncate content for embedding
 
 
@@ -78,11 +81,13 @@ class EmbeddingMetadata:
     Block C shape extraction lands.
     """
     vector: list[float]                    # the embedding itself
-    model: str                             # e.g., "nomic-embed-text-v1.5"
+    model: str                             # e.g., "nomic-embed-text:v1.5"
     dim: int                               # vector length, asserted on init
     source_text: str                       # what was fed to the embedder
     generated_at: datetime = field(default_factory=datetime.now)
-    
+    model_blob_sha: str | None = None  
+
+
     def __post_init__(self):
         if len(self.vector) != self.dim:
             raise ValueError(
@@ -207,22 +212,36 @@ def extract_embedding_source(content: bytes, max_chars: int = EMBED_SOURCE_MAX_C
     return text[:max_chars]
 
 
-def enrich_artifact(name: str, content: bytes) -> RichArtifact:
+def enrich_artifact(
+    name: str,
+    content: bytes,
+    embedder: Optional["NomicEmbedder"] = None,
+) -> RichArtifact:
     """
     Convert raw artifact to RichArtifact with inferred metadata.
-    
+
+    If an embedder is provided, attempts to populate `embedding` via
+    Path B (truncated text source). Embedding failure is non-fatal:
+    embedding remains None and the loop continues.
+
     Shape extraction is deferred to Phase 9 full implementation.
-    Embedding is deferred to the embedder call site (does not happen here).
     """
     domain = infer_domain(name, content)
-    
+
+    embedding: Optional[EmbeddingMetadata] = None
+    if embedder is not None:
+        source = extract_embedding_source(content)
+        if source.strip():
+            embedding = embedder.embed(source)
+            # embed() returns None on failure; that's fine, field stays None
+
     return RichArtifact(
         name=name,
         content=content,
         domain=domain,
-        shape=None,  # TODO: Phase 9 shape extraction
-        structure=None,  # TODO: Phase 9 structural analysis
+        shape=None,
+        structure=None,
         anchors=[],
         resonance_score=0.0,
-        embedding=None,  # populated by embedder, not at enrichment time
+        embedding=embedding,
     )
