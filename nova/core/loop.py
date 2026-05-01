@@ -25,13 +25,17 @@ from dataclasses import dataclass, field, asdict
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 
 import requests
 
 from nova.core.ast_shield import shield_gate
 from nova.core.sandbox import execute_sandboxed, SandboxResult, SandboxStatus
 from nova.core.memory import remember  
+from nova.core.artifact import RichArtifact, enrich_artifact
+
+if TYPE_CHECKING:
+    from nova.core.embedding import NomicEmbedder
 
 log = logging.getLogger("nova.loop")
 
@@ -109,6 +113,7 @@ class IterationRecord:
     reflector_duration_s: float = 0.0
     score: Optional[ReflectorScore] = None
     error: str = ""
+    artifacts: list[RichArtifact] = field(default_factory=list)
 
 
 @dataclass
@@ -380,6 +385,7 @@ def dream_loop(
     initial_hypothesis: str,
     goal: str,
     cfg: LoopConfig = LoopConfig(),
+    embedder: Optional["NomicEmbedder"] = None,
 ) -> ExperimentResult:
     exp_dir = _prepare_experiment_dir(cfg.experiments_root, experiment_id)
     log.info("[DREAM] start exp=%s dir=%s", experiment_id, exp_dir)
@@ -391,7 +397,7 @@ def dream_loop(
 
     for i in range(1, cfg.max_iterations + 1):
         rec = _run_one_iteration(
-            i, initial_hypothesis, goal, critique, cfg
+            i, initial_hypothesis, goal, critique, cfg, embedder=embedder
         )
         iterations.append(rec)
         _write_iteration(exp_dir, rec)  # durable after EVERY iteration
@@ -464,7 +470,13 @@ def dream_loop(
     return result  
 
 def _run_one_iteration(
-    i: int, hypothesis: str, goal: str, critique: str, cfg: LoopConfig
+    i: int,
+    hypothesis: str,
+    goal: str,
+    critique: str,
+    cfg: LoopConfig,
+    embedder: Optional["NomicEmbedder"] = None,
+
 ) -> IterationRecord:
     started = _now_iso()
     rec = IterationRecord(
@@ -475,6 +487,7 @@ def _run_one_iteration(
         hypothesis=hypothesis,
         critique_applied=critique,
     )
+
 
     # --- Presence pause (consideration before action) ---
     if cfg.min_consideration_ms > 0:
@@ -517,6 +530,16 @@ def _run_one_iteration(
     rec.sandbox_status = str(sandbox.status)
     rec.sandbox_stdout = sandbox.stdout
     rec.sandbox_stderr = sandbox.stderr
+    
+    # --- Artifact enrichment (Phase 9, E-2b) ---
+    enriched: list[RichArtifact] = []
+    for name, blob in sandbox.artifacts.items():
+        try:
+            enriched.append(enrich_artifact(name, blob, embedder=embedder))
+        except Exception as e:
+            log.warning("[DREAM] artifact enrichment failed name=%s err=%s", name, e)
+    rec.artifacts = enriched
+
 
     # Map sandbox status → iteration status (but we still call the Reflector
     # for most outcomes — a failed run is still signal).
@@ -584,8 +607,11 @@ def _write_iteration(exp_dir: Path, rec: IterationRecord) -> None:
     stem = f"iter{rec.iteration:03d}"
     _atomic_write(exp_dir / f"{stem}_code.py", rec.code or "# (no code)")
     # Full record as JSON (includes timing, stdout, stderr, score, reasoning).
+    # Surgical override: vectors stay in-memory; persisted artifacts omit them.
+    payload = asdict(rec)
+    payload["artifacts"] = [a.to_dict(include_vector=False) for a in rec.artifacts]
     _atomic_write(exp_dir / f"{stem}_record.json",
-                  json.dumps(asdict(rec), indent=2, default=str))
+                  json.dumps(payload, indent=2, default=str))
 
 
 def _write_summary(exp_dir: Path, result: ExperimentResult) -> None:
