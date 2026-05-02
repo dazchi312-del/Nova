@@ -698,22 +698,23 @@ def _parse_args():
     return parser.parse_args()
 
 
-if __name__ == "__main__":
+def main() -> None:
+    """CLI entry point for the dream loop."""
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     )
     args = _parse_args()
-    
+
     exp_id = args.experiment_id or f"smoke_{int(time.time())}"
     cfg = LoopConfig(
         max_iterations=args.max_iterations,
         dry_run=args.dry_run,
     )
-    
+
     if cfg.dry_run:
         log.info("[DRY-RUN] Sandbox execution will be skipped")
-    
+
     result = dream_loop(
         experiment_id=exp_id,
         initial_hypothesis=args.hypothesis,
@@ -723,3 +724,6 @@ if __name__ == "__main__":
     print(f"[DONE] best score = {result.final_score:.2f}, "
           f"stopped = {result.stopped_reason}")
 
+
+if __name__ == "__main__":
+    main()

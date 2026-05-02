@@ -8,6 +8,17 @@ dependencies = [
     "requests>=2.33.0",
 ]
 
+[project.scripts]
+nova = "nova.core.loop:main"
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["nova*"]
+exclude = ["experiments*", "labs*", "logs*", "data*", "db*", "docker*", "nova_data*", "noe*", "tests*"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
