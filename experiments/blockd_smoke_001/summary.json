@@ -1,0 +1,16 @@
+{
+  "experiment_id": "blockd_smoke_001",
+  "goal": "Write a Python function that returns the sum of two integers",
+  "initial_hypothesis": "A simple function using the + operator will suffice",
+  "best_iteration_index": 1,
+  "final_score": 1.0,
+  "stopped_reason": "auto_accept",
+  "iteration_count": 1,
+  "scores": [
+    {
+      "iter": 1,
+      "status": "ok",
+      "overall": 1.0
+    }
+  ]
+}

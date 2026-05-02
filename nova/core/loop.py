@@ -25,18 +25,16 @@ from dataclasses import dataclass, field, asdict
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
-from typing import Optional, TYPE_CHECKING
+from typing import Optional 
 
 import requests
 
 from nova.core.ast_shield import shield_gate
 from nova.core.sandbox import execute_sandboxed, SandboxResult, SandboxStatus
 from nova.core.memory import remember  
-from nova.core.artifact import RichArtifact, enrich_artifact
-
-if TYPE_CHECKING:
-    from nova.core.embedding import NomicEmbedder
-
+from nova.core.artifact import RichArtifact, enrich_artifact, EmbeddingMetadata
+from nova.core.embedder import NomicEmbedder
+ 
 log = logging.getLogger("nova.loop")
 
 # ===== CONFIG =====
@@ -51,12 +49,12 @@ class LoopConfig:
     auto_reject_threshold: float = 0.50
     auto_reject_streak: int = 2  # reject if N consecutive below threshold
 
-    dreamer_url: str = "http://10.0.0.195:1234/v1/chat/completions"
+    dreamer_url: str = "http://192.168.100.1:1234/v1/chat/completions"
     dreamer_model: str = "llama-3.1-nemotron-70b-instruct-hf"
     dreamer_timeout_s: int = 180
 
-    reflector_url: str = "http://10.0.0.167:11434/v1/chat/completions"
-    reflector_model: str = "llama3.1:8b"
+    reflector_url: str = "http://192.168.100.2:11434/v1/chat/completions"
+    reflector_model: str = "phi4:latest"
     reflector_timeout_s: int = 30
     reflector_retries: int = 1
 
@@ -64,6 +62,9 @@ class LoopConfig:
     experiments_root: Path = Path("experiments")
     min_consideration_ms: int = 500    # Phase 9: forced consideration pause (gating not yet wired)
     dry_run: bool = False  # if True, skip sandbox execution
+    embedder_url: str = "http://192.168.100.2:11434"
+    embedder_model: str = "nomic-embed-text"
+    embedder_enabled: bool = True
 
 
 # ===== ITERATION RECORD =====
@@ -114,6 +115,7 @@ class IterationRecord:
     score: Optional[ReflectorScore] = None
     error: str = ""
     artifacts: list[RichArtifact] = field(default_factory=list)
+    embedding: Optional[EmbeddingMetadata] = None
 
 
 @dataclass
@@ -390,6 +392,15 @@ def dream_loop(
     exp_dir = _prepare_experiment_dir(cfg.experiments_root, experiment_id)
     log.info("[DREAM] start exp=%s dir=%s", experiment_id, exp_dir)
 
+    if embedder is None and cfg.embedder_enabled:
+        try:
+            embedder = NomicEmbedder(cfg.embedder_url, cfg.embedder_model)
+            log.info("[DREAM] embedder auto-instantiated url=%s model=%s",
+                     cfg.embedder_url, cfg.embedder_model)
+        except Exception as e:
+            log.warning("[DREAM] embedder init failed: %s — proceeding without", e)
+            embedder = None
+
     iterations: list[IterationRecord] = []
     critique = ""  # empty on first iteration
     reject_streak = 0
@@ -559,6 +570,20 @@ def _run_one_iteration(
     if rec.score.reasoning.startswith("[reflector_failed]"):
         rec.status = IterationStatus.REFLECTOR_FAILED
         rec.error = rec.score.reasoning
+
+    if embedder is not None and rec.status != IterationStatus.DREAMER_FAILED:
+        reasoning = rec.score.reasoning if rec.score else ""
+        source_text = (
+            "HYPOTHESIS:\n" + str(rec.hypothesis) + "\n\n"
+            "CODE:\n" + str(rec.code) + "\n\n"
+            "REASONING:\n" + str(reasoning)
+        )
+        try:
+            embedding = embedder.embed(source_text)
+            if embedding is not None:
+                rec.embedding = embedding
+        except Exception as e:
+            log.warning("[DREAM] iteration embedding failed iter=%d err=%s", i, e)
 
     rec.ended_at = _now_iso()
     return rec

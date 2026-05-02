@@ -5,12 +5,11 @@ Artifacts carry structural metadata enabling cross-domain resonance detection.
 """
 
 from dataclasses import dataclass, field
-from typing import Optional, Any
-from enum import Enum
-from datetime import datetime
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Optional, Any
 if TYPE_CHECKING:
     from nova.core.embedder import NomicEmbedder
+from enum import Enum
+from datetime import datetime
 
 
 # Embedding model constants
