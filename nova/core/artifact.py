@@ -31,7 +31,11 @@ class ArtifactDomain(Enum):
     DATA = "data"
     UNKNOWN = "unknown"
 
-
+# DEFERRED: scaffolding for Phase 10+ shape extraction.
+# ShapeDescriptor and StructuralMetadata are currently assigned None on RichArtifact;
+# no extraction pipeline writes to these fields yet. When shape extraction lands,
+# migrate to Pydantic models in nova/core/schemas.py to maintain the persistence
+# boundary established in Phase 9.
 @dataclass
 class ShapeDescriptor:
     """
@@ -101,43 +105,7 @@ class RichArtifact:
     def size_bytes(self) -> int:
         return len(self.content)
     
-    def to_dict(self, include_vector: bool = False) -> dict:
-        """
-        Serialize for storage/API.
-        
-        Args:
-            include_vector: If True, include full embedding vector.
-                           Default False to keep log dumps lightweight
-                           (768 floats ≈ 11KB JSON per artifact).
-        """
-        embedding_dict = None
-        if self.embedding:
-            embedding_dict = {
-                "model": self.embedding.model,
-                "dim": self.embedding.dim,
-                "source_text": self.embedding.source_text,
-                "generated_at": self.embedding.generated_at.isoformat(),
-            }
-            if include_vector:
-                embedding_dict["vector"] = self.embedding.vector
-        
-        return {
-            "name": self.name,
-            "domain": self.domain.value,
-            "size_bytes": self.size_bytes,
-            "shape": {
-                "primary": self.shape.primary,
-                "secondary": self.shape.secondary,
-                "confidence": self.shape.confidence
-            } if self.shape else None,
-            "anchors": self.anchors,
-            "resonance_score": self.resonance_score,
-            "embedding": embedding_dict,
-            "created_at": self.created_at.isoformat(),
-            "iteration_id": self.iteration_id
-        }
-
-
+    
 def infer_domain(filename: str, content: bytes) -> ArtifactDomain:
     """Infer artifact domain from filename and content."""
     ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""

@@ -60,3 +60,13 @@ experiments/smoke_*/
 
 # Experiment runtime data (schema validation runs)
 experiments/schema_v1_*/
+
+# Editor backup files (terminal-only workflow discipline)
+*.bak
+*.bak.*
+*.bak-*
+
+# Editor backup files (terminal-only workflow discipline)
+*.bak
+*.bak.*
+*.bak-*
