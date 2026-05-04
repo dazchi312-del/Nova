@@ -34,6 +34,7 @@ from nova.core.sandbox import execute_sandboxed, SandboxResult, SandboxStatus
 from nova.core.memory import remember  
 from nova.core.artifact import RichArtifact, enrich_artifact, EmbeddingMetadata
 from nova.core.embedder import NomicEmbedder
+from nova.core.schemas import ArtifactRecordV1
 from nova.core.schemas import (
     IterationRecord as IterationRecordV1,
     Score as ScoreV1,
@@ -667,8 +668,16 @@ def _write_iteration(exp_dir: Path, rec: IterationRecord) -> None:
             model_blob_sha=e.model_blob_sha,
         )
 
-    artifact_names = [a.name for a in rec.artifacts]
-    status_val = rec.status.value if hasattr(rec.status, "value") else str(rec.status)
+    artifact_records = [
+    ArtifactRecordV1(
+        name=a.name,
+        shape=a.shape,
+        structure=a.structure,
+    )
+    for a in rec.artifacts
+]
+
+    status_val = rec.status.value if hasattr(rec.status, 'value') else str(rec.status)
 
     record_v1 = IterationRecordV1(
         iteration=rec.iteration,
@@ -688,7 +697,7 @@ def _write_iteration(exp_dir: Path, rec: IterationRecord) -> None:
         score=score_v1,
         reflector_status=reflector_status,
         error=rec.error or "",
-        artifacts=artifact_names,
+        artifacts=artifact_records,
         embedding=embedding_v1,
     )
 

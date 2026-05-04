@@ -108,6 +108,12 @@ class StructuralMetadata(BaseModel):
     # Generic escape hatch for evolving metrics pre-schema-bump
     raw: dict = Field(default_factory=dict)
 
+class ArtifactRecordV1(BaseModel):
+    """Per-artifact persistence record. Lossless projection of RichArtifact."""
+    model_config = ConfigDict(extra="forbid")
+    name: str
+    shape: Optional[ShapeDescriptor] = None
+    structure: Optional[StructuralMetadata] = None
 
 
 class IterationRecord(BaseModel):
@@ -140,11 +146,9 @@ class IterationRecord(BaseModel):
     reflector_status: Literal["ok", "failed", "timeout", "skipped"] = "ok"
 
     error: str = ""
-    artifacts: List[str] = Field(default_factory=list)
+    artifacts: List[ArtifactRecordV1] = Field(default_factory=list)
     embedding: Optional[EmbeddingMetadata] = None
-    shape: Optional[ShapeDescriptor] = None
-    structure: Optional[StructuralMetadata] = None
-
+    
     @field_validator("sandbox_status", mode="before")
     @classmethod
     def _normalize_sandbox_status(cls, v):
