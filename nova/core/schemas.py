@@ -77,6 +77,38 @@ IterationStatusLiteral = Literal[
     "reflector_failed",
 ]
 
+# ===== STRUCTURAL SHAPE (Phase 10) =====
+
+class ShapeDescriptor(BaseModel):
+    """
+    Domain-agnostic structural pattern extracted from an artifact.
+    Enables cross-domain matching in Phase 11.
+    """
+    model_config = ConfigDict(extra="forbid")
+
+    primary: str = Field(..., min_length=1)
+    secondary: List[str] = Field(default_factory=list)
+    confidence: float = Field(0.0, ge=0.0, le=1.0)
+
+
+class StructuralMetadata(BaseModel):
+    """
+    Domain-specific structural metrics. Phase 10 populates code fields only;
+    other domains will extend this model when their extractors land.
+    """
+    model_config = ConfigDict(extra="allow")
+
+    # Code-specific (Phase 10)
+    ast_depth: Optional[int] = Field(None, ge=0)
+    cyclomatic_complexity: Optional[int] = Field(None, ge=0)
+    function_count: Optional[int] = Field(None, ge=0)
+    class_count: Optional[int] = Field(None, ge=0)
+    import_count: Optional[int] = Field(None, ge=0)
+
+    # Generic escape hatch for evolving metrics pre-schema-bump
+    raw: dict = Field(default_factory=dict)
+
+
 
 class IterationRecord(BaseModel):
     """The single source of truth for one Dream→Execute→Reflect iteration."""
@@ -110,6 +142,8 @@ class IterationRecord(BaseModel):
     error: str = ""
     artifacts: List[str] = Field(default_factory=list)
     embedding: Optional[EmbeddingMetadata] = None
+    shape: Optional[ShapeDescriptor] = None
+    structure: Optional[StructuralMetadata] = None
 
     @field_validator("sandbox_status", mode="before")
     @classmethod
