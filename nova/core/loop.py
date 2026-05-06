@@ -660,12 +660,15 @@ def _write_iteration(exp_dir: Path, rec: IterationRecord) -> None:
     if rec.embedding is not None:
         e = rec.embedding
         embedding_v1 = EmbeddingMetadataV1(
+            schema_version=e.schema_version,
             vector=e.vector,
             model=e.model,
             dim=e.dim,
             source_text=e.source_text,
+            source_sha256=e.source_sha256,
             generated_at=e.generated_at,
             model_blob_sha=e.model_blob_sha,
+            
         )
 
     artifact_records = [

@@ -14,30 +14,54 @@ from __future__ import annotations
 from datetime import datetime
 from typing import List, Optional, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, field_validator, model_validator
+# ... (existing imports)
 SCHEMA_VERSION = 1
 
-
-# ===== EMBEDDING =====
-
 class EmbeddingMetadata(BaseModel):
-    """Vector + provenance for a single embedding."""
     model_config = ConfigDict(extra="forbid")
 
+    schema_version: int = 2
     vector: List[float] = Field(..., min_length=1)
     model: str
     dim: int = Field(..., gt=0)
     source_text: str
+    source_sha256: Optional[str] = None
     generated_at: datetime
     model_blob_sha: Optional[str] = None
 
-    @field_validator("vector")
+    # In-memory only; never serialized. Set by provenance.verify_embedding().
+    # Values: "ok" | "mismatch" | "skipped"
+    _verification_status: str = PrivateAttr(default="skipped")
+
+    @model_validator(mode="before")
     @classmethod
-    def _vector_matches_dim(cls, v: List[float], info) -> List[float]:
-        # dim is validated separately; cross-check happens in model_validator below.
-        return v
+    def _resolve_schema_version(cls, data):
+        """
+        Schema version is derived from provenance state, not declared:
+        - source_sha256 present → v2 (Track B provenance record)
+        - source_sha256 absent  → v1 (legacy / pre-Track B)
+
+        An explicitly provided schema_version is honored only if it agrees
+        with the derived value; mismatches raise to surface corruption early.
+        """
+        if not isinstance(data, dict):
+            return data
+
+        has_hash = data.get("source_sha256") is not None
+        derived = 2 if has_hash else 1
+
+        declared = data.get("schema_version")
+        if declared is not None and declared != derived:
+            raise ValueError(
+                f"schema_version mismatch: declared={declared} but "
+                f"source_sha256 {'present' if has_hash else 'absent'} implies v{derived}"
+            )
+
+        data["schema_version"] = derived
+        return data
+
 
     def model_post_init(self, __context) -> None:
         if len(self.vector) != self.dim:

@@ -9,6 +9,7 @@ Soft-fails: returns None on error, never raises into the loop.
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import os
 import time
@@ -125,9 +126,11 @@ class NomicEmbedder:
         logger.info("nomic embed ok: %d dims in %.1fms", len(vector), elapsed_ms)
 
         return EmbeddingMetadata(
+            schema_version=2,
             vector=vector,
             model=self.model,
             dim=len(vector),
             source_text=source,
+            source_sha256=hashlib.sha256(source.encode("utf-8")).hexdigest(),
             generated_at=datetime.now(timezone.utc),
         )
