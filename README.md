@@ -1,1 +1,106 @@
-Nova — The Imagination EngineA Local-First Sovereign Intelligence LatticeMost AI systems are reactive: you prompt, they answer. Nova inverts that relationship.Nova is not an assistant, a chatbot, or a wrapper around a cloud API. She is an Imagination Engine—a closed-loop architecture where one model dreams (generates candidate ideas or code), a second model reflects (scores and critiques), and an embedding layer remembers the geometric shape of the thought.Over time, Nova doesn't just answer questions. She develops a resonant memory of her own thinking, recognizes when new ideas echo old ones, and uses that recognition to imagine further.Built with urban logic and pure grit. Local-first. Sovereign by design.🏗️ The Sovereign Lattice (Architecture)Nova runs as a two-node, three-role system on entirely local hardware. No cloud APIs. No telemetry. No vendor lock-in. No external kill-switches.Communication runs over a dedicated, isolated LAN (192.168.100.0/24).NodeHardwareRoleCurrent ModelDreamer (Right Brain)192.168.100.1 (RTX 5090)High-entropy generation & ideationQwen 2.5 32BOrchestrator (Left Brain)192.168.100.2 (M4 Pro)Reflection, memory, and control planePhi-4 & Nomic-EmbedThe Three RolesThe Dreamer: Generates candidate outputs, code, and hypotheses.The Reflector: Scores the Dreamer's outputs. Operates in Tutor Mode, providing a two-step "score-then-explain" feedback loop. It demands elegance and penalizes hallucinated complexity.The Embedder: Compresses every artifact (dreams, reflections, code) into a 768-dimensional vector to detect "Shape Resonance"—the moment a new idea echoes a past one.⚙️ Core SubsystemsNova Output Engine (NOE): The core Judge-and-Improve loop. The Dreamer generates; the Reflector scores. If the score misses the threshold, the loop regenerates until quality is reached or the iteration budget runs out.Shape Resonance (Dual-Index Memory): Artifacts aren't just saved; they are embedded. We track both the vector intent (what the code means) and the structural metadata (how it's organized).Lab Zero (In Development): A hardened sandbox where Nova forms hypotheses, writes experimental Python, executes it under strict isolation, and reflects on the results.AST Safety Shield (In Development): Compiler-grade security. Before Nova executes any dreamed code in Lab Zero, it is parsed into an Abstract Syntax Tree (AST) to block filesystem escapes, network calls, and unauthorized subprocesses. The sovereign host stays sovereign.📍 Where We're At (Current State)We are deep in Phase 10 (Boundary Hardening & Validation).The engine has moved past the prototype phase and is currently undergoing serious infrastructure hardening. Recent wins include:Strict Persistence Contracts: Transitioned the internal memory and journal system to strict Pydantic V2 schemas (schema_v1). "Fail Loud, Fail Early."The Replay Trichotomy: Built deterministic replay tooling (replay_schema_check.py) that audits Nova's historical journals to track how her structural metadata coverage evolves over time.The Corpus Callosum: Successfully wired the Dreamer and Reflector across the 192.168 lattice, ensuring the two distinct "minds" can communicate securely without corrupting each other's data.Next Up: Moving from standard memory storage to SHA-256 Content-Addressed Provenance (making Nova's memories cryptographically immutable), and laying the groundwork for Lab Zero execution.🛡️ The MissionTo transform AI from a reactive assistant into an autonomous explorer that runs entirely on hardware its operator owns. Nova exists to:Operate Locally: Run on user-owned hardware, free of cloud surveillance.Remain Sovereign: Immune to forced updates or vendor leverage.Learn & Evolve: Improve through local reflection and resonance memory.Stay Safe: Protect the host through AST shields and network isolation.The long-term goal is not a smarter chatbot. It is a private, durable, personally-owned thinking partner—one that imagines, remembers, and grows alongside the person who built it.Getting Started & ContributingSetup documentation is a Phase 10 deliverable. The system currently requires specific hardware (Windows/NVIDIA + Mac/Apple Silicon) configured on a dedicated LAN.Contribution guidelines are forthcoming. The project is intentionally kept to a small-team footprint during these foundational architectural phases.License: GPL-3.0Built by: dazchicago
+# Nova — The Imagination Engine
+
+> A local-first, sovereign AI operating system.
+> Urban logic meets pure grit. DIY or die.
+
+![License](https://img.shields.io/badge/license-GPL--3.0-blue)
+![Status](https://img.shields.io/badge/status-active%20research-orange)
+![Python](https://img.shields.io/badge/python-3.11%2B-blue)
+
+---
+
+## What Nova Is
+
+Nova is a two-machine local AI system designed to run, reason, and remember
+without depending on cloud APIs. It is built around the idea that a personal
+intelligence should be **owned, inspectable, and reproducible** — not rented.
+
+Most AI tools are reactive: you prompt, they answer. Nova is structured as a
+closed loop: one model generates, a second model reflects, and a provenance
+layer records every artifact with a content hash so that nothing the system
+produces is unverifiable later.
+
+This repository contains the working code, schemas, tests, and operational
+tools for that system.
+
+## Architecture
+
+Nova runs across two machines connected over a local network:
+
+- **Dreamer** — generation host (RTX 5090, Qwen 2.5 32B). Produces candidate
+  outputs.
+- **Orchestrator** — reflection and control host (Apple Silicon, Phi-4).
+  Scores, critiques, and routes.
+
+Artifacts produced by either machine are recorded in a local store with
+SHA-256 content hashes and schema-versioned metadata. Migration tooling
+exists for evolving the schema without losing historical records.
+
+┌─────────────┐ ┌──────────────────┐ │ Dreamer │ ──────▶ │ Orchestrator │ │ (generate) │ │ (reflect) │ └─────────────┘ └──────────────────┘ │ │ └──────────┬─────────────┘ ▼ ┌─────────────────┐ │ Provenance │ │ (SHA-256 + │ │ schema v1) │ └─────────────────┘
+
+
+## Current Status
+
+This is an **active research project**, not a finished product. Subsystems
+land in phases; each phase closes when its tests pass and its artifacts are
+reproducible.
+
+### Working today
+
+- Dual-machine generation/reflection loop
+- SHA-256 content addressing for all artifacts (Track B — closed)
+- Schema-versioned record store with migration tooling
+- Test suite covering provenance, replay, and schema validation
+- Provenance inspection CLI (`tools/`)
+
+### In progress
+
+- Track C: `model_record.json` schema and registry
+- Phase 11: capability expansion (see `docs/briefs/`)
+
+### Phase log
+
+Detailed phase-by-phase logs live in `docs/` and `logs/`. Tags mark
+checkpoint releases (`v0.7.0`, `v0.8.3`, `v0.9.0`).
+
+## Repository Layout
+
+| Path | Purpose |
+|------|---------|
+| `nova/` | Core package — generation, reflection, provenance |
+| `tests/` | pytest suite |
+| `tools/` | Operational CLIs (inspection, migration) |
+| `docs/` | Design briefs, architecture notes |
+| `experiments/` | Throwaway probes and validation runs |
+| `scripts/` | Build and ops scripts |
+| `db/`, `nova_data/` | Local stores (gitignored where appropriate) |
+| `docker/` | Container definitions for reproducible runs |
+
+## Requirements
+
+- Python 3.11+
+- A GPU host capable of running a 32B-parameter model (Dreamer)
+- A second host for orchestration (any modern Mac or Linux box)
+- Local network connectivity between the two
+
+Exact model choices are configurable; the defaults assume Qwen 2.5 32B on
+the Dreamer and Phi-4 on the Orchestrator.
+
+## Getting Started
+
+> Nova is not yet packaged for one-command install. The steps below assume
+> you are comfortable with Python environments and local networking.
+
+```bash
+git clone https://github.com/dazchi312-del/Nova-Imagination-Engine.git
+cd Nova-Imagination-Engine
+pip install -e ".[dev]"
+pytest
+
+## Licensing
+- **Code:** AGPL-3.0 (`LICENSE-CODE`)
+- **Documentation:** CC BY 4.0 (`LICENSE-DOCS`)
+- **Schemas:** MIT (`LICENSE-SCHEMAS`)
+- **Brand:** "Nova," the seal, and "Dazchicago" are trademarks of the
+  project author. See `TRADEMARKS.md`.
+
