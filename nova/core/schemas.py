@@ -34,8 +34,9 @@ class EmbeddingMetadata(BaseModel):
     # presence of source_sha256; the default of 2 is never actually used
     # because the validator always overwrites it. The default exists only
     # to satisfy Pydantic's field requirement during partial construction.
-    # TODO(ADR): change to Optional[int] = None once we have explicit
-    # coverage of the validator's mismatch-detection branch.
+    # TODO(ADR-0008): change to Optional[int] = None once the v0->v1
+    # migration rewriter lands. See
+    # docs/adr/0008-embedding-metadata-schema-version-default.md
     schema_version: int = 2
     vector: List[float] = Field(..., min_length=1)
 
