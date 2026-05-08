@@ -22,8 +22,23 @@ SCHEMA_VERSION = 1
 class EmbeddingMetadata(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    # NOTE: This `schema_version` is EMBEDDING-LOCAL and independent of
+    # IterationRecord.schema_version (defined below) and of the constants
+    # in nova/schema/constants.py.
+    #
+    #   EmbeddingMetadata.schema_version  ∈ {1, 2}
+    #     1 = legacy / pre-Track B (no source_sha256)
+    #     2 = Track B provenance record (source_sha256 present)
+    #
+    # The value is DERIVED by _resolve_schema_version() below from the
+    # presence of source_sha256; the default of 2 is never actually used
+    # because the validator always overwrites it. The default exists only
+    # to satisfy Pydantic's field requirement during partial construction.
+    # TODO(ADR): change to Optional[int] = None once we have explicit
+    # coverage of the validator's mismatch-detection branch.
     schema_version: int = 2
     vector: List[float] = Field(..., min_length=1)
+
     model: str
     dim: int = Field(..., gt=0)
     source_text: str
