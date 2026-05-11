@@ -5,6 +5,7 @@ description = "Nova: a local-first imaginative cognition system."
 requires-python = ">=3.11"
 dependencies = [
     "openai>=2.32.0",
+    "psutil>=5.9.0",
     "requests>=2.33.0",
 ]
 
@@ -25,3 +26,7 @@ markers = [
     "integration: requires Docker/gVisor; slow",
     "network: hits real network services",
 ]
+
+[tool.setuptools.packages.find]
+include = ["nova*"]
+exclude = ["tests*", "experiments*", "labs*", "docs*", "scripts*", "tools*"]

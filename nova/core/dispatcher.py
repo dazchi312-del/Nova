@@ -87,33 +87,8 @@ def _print_dry_run_preview(call: dict) -> None:
 
 
 def execute_tool(call: dict) -> str:
-    tool_name = call.get("tool", "").strip()
-    args = call.get("args", {})
-
-    if not tool_name:
-        raise DispatchError("Tool call missing 'tool' field.")
-
-    try:
-        if tool_name == "read_file":
-            return read_file(args["path"])
-        elif tool_name == "write_file":
-            return write_file(args["path"], args["content"])
-        elif tool_name == "list_directory":
-            return list_directory(args.get("path", "."))
-        elif tool_name == "run_shell":
-            return run_shell(args["command"])
-        elif tool_name == "list_processes":
-            return list_processes(sort_by=args.get("sort_by", "cpu"), limit=int(args.get("limit", 20)))
-        elif tool_name == "kill_process":
-            return kill_process(pid=int(args["pid"]), force=bool(args.get("force", False)))
-        elif tool_name == "get_system_stats":
-            return get_system_stats()
-        else:
-            raise DispatchError(f"Unknown tool: '{tool_name}'")
-    except ToolError as exc:
-        raise DispatchError(f"Tool '{tool_name}' failed: {exc}") from exc
-    except KeyError as exc:
-        raise DispatchError(f"Tool '{tool_name}' missing required arg: {exc}") from exc
+    from nova.tools.registry import dispatch_call
+    return dispatch_call(call)
 
 
 def dispatch(nova_output: str, dry_run: bool = False) -> tuple[bool, str]:
