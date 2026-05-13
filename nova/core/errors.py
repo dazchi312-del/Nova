@@ -30,3 +30,8 @@ class NovaPlanningError(NovaError):
 class NovaVerificationError(NovaError):
     """Self-test failures - critical for autonomous quality control."""
     pass
+
+class DispatchError(NovaToolError):
+    """Tool dispatch failures: unknown tool, missing args, malformed call."""
+    pass
+

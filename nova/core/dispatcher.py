@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import re
 from typing import Any
-
+from nova.core.errors import DispatchError
 from nova.core.tools import read_file, write_file, list_directory, run_shell, list_processes, kill_process, get_system_stats, ToolError
 
 
@@ -39,10 +39,6 @@ Available tools:
 After receiving [TOOL RESULT], respond in plain text with the actual result.
 If no tool is needed, respond normally.
 """
-
-
-class DispatchError(Exception):
-    """Raised when dispatch parsing or execution fails."""
 
 
 def extract_tool_call(text: str) -> dict | None:

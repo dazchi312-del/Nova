@@ -22,7 +22,7 @@ import importlib
 from dataclasses import dataclass
 from typing import Any, Callable
 
-from nova.core.dispatcher import DispatchError
+from nova.core.errors import DispatchError
 from nova.core.tools import ToolError  # noqa: F401  — re-export for clarity
 
 

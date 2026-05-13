@@ -16,7 +16,8 @@ Reference: Plan C, Step C.0 (Tool Registry Migration).
 import pytest
 from unittest.mock import patch
 
-from nova.core.dispatcher import execute_tool, DispatchError
+from nova.core.dispatcher import execute_tool
+from nova.core.errors import DispatchError
 from nova.core.errors import NovaToolError
 
 
